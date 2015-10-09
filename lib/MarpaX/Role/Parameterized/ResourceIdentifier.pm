@@ -368,6 +368,10 @@ role {
 
 }
 
+=head1 NOTES
+
+The caller is required to use MooX::ClassAttribute.
+
 =head1 SEE ALSO
 
 L<Uniform Resource Identifier (URI): Generic Syntax|http://tools.ietf.org/html/rfc3986>
