@@ -14,6 +14,8 @@ use MooX::HandlesVia;
 
 # AUTHORTIY
 
+# AUTHORITY
+
 #
 # URI/IRI are sharing EXACTLY the same implementation algorithm, only some names are changing.
 # 
