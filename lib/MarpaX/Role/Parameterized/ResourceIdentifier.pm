@@ -29,6 +29,7 @@ role {
   #
   our @PUBLIC = qw/value
                    grammar bnf
+                   URI URI_reference absolute_URI relative_ref
                    scheme authority path query fragment hier_part userinfo host port relative_part ip_literal zoneid ipv4address reg_name
                    scheme_normalization protocol_normalization
                    canonical is_absolute/;
@@ -40,7 +41,8 @@ role {
   # Default naming of internal attributes/methods
   #
   our @PRIVATE = qw/_parse _normalize _remove_dot_segments
-                    _marpa_concat _marpa_scheme _marpa_authority _marpa_path _marpa_query _marpa_fragment
+                    _marpa_concat
+                    _marpa_scheme _marpa_URI _marpa_URI_reference _marpa_relative_ref _marpa_authority _marpa_path _marpa_query _marpa_fragment
                     _marpa_hier_part _marpa_userinfo _marpa_host _marpa_port _marpa_relative_part _marpa_ip_literal
                     _marpa_zoneid _marpa_ipv4address _marpa_reg_name/;
   foreach (@PRIVATE) {
@@ -57,8 +59,11 @@ role {
 
   my $value                          = $params->{value};
   my $grammar                        = $params->{grammar};
-  my $BNF_section_data               = $params->{BNF_section_data};
   my $bnf                            = $params->{bnf};
+  my $URI                            = $params->{URI};
+  my $URI_reference                  = $params->{URI_reference};
+  my $absolute_URI                   = $params->{absolute_URI};
+  my $relative_ref                   = $params->{relative_ref};
   my $scheme                         = $params->{scheme};
   my $authority                      = $params->{authority};
   my $path                           = $params->{path};
@@ -86,6 +91,9 @@ role {
   my $_normalize                     = $params->{_normalize};
   my $_remove_dot_segments           = $params->{_remove_dot_segments};
   my $_marpa_concat                  = $params->{_marpa_concat};
+  my $_marpa_URI                     = $params->{_marpa_URI};
+  my $_marpa_URI_reference           = $params->{_marpa_URI_reference};
+  my $_marpa_relative_ref            = $params->{_marpa_relative_ref};
   my $_marpa_scheme                  = $params->{_marpa_scheme};
   my $_marpa_authority               = $params->{_marpa_authority};
   my $_marpa_path                    = $params->{_marpa_path};
@@ -107,16 +115,28 @@ role {
   # Note: why the generated "requires" do not like the class_has ?
   #
 
+  my $BNF_section_data               = $params->{BNF_section_data};
   our $GRAMMAR = Marpa::R2::Scanless::G->new({ source => $BNF_section_data });
   our $BNF     = ${$BNF_section_data};
 
-  method $grammar => sub { $GRAMMAR };
-  method $bnf     => sub { $BNF };
-
   has $value         => (is => 'rwp', isa => Str,       required => 1, trigger => 1 );
+  method $grammar    => sub { $GRAMMAR };
+  method $bnf        => sub { $BNF };
+  has $URI           => (is => 'rw',  isa => Str|Undef, default => sub { undef });
+  has $URI_reference => (is => 'rw',  isa => Str,       default => sub {    '' });
+  method $absolute_URI => sub {
+    my ($self) = @_;
+    my $rc = undef;
+    if ($self->is_absolute) {
+      $rc = $self->$scheme . ':' . $self->$hier_part;
+      $rc .= '?' . $self->$fragment if (! Undef->check($self->$query));
+    }
+    return $rc;
+  };
+  has $relative_ref  => (is => 'rw',  isa => Str|Undef, default => sub { undef });
   has $scheme        => (is => 'rw',  isa => Str|Undef, default => sub { undef });
   has $authority     => (is => 'rw',  isa => Str|Undef, default => sub { undef });
-  has $path          => (is => 'rw',  isa => Str,       default => sub {   ''  }); # There is always a path in an URI
+  has $path          => (is => 'rw',  isa => Str,       default => sub {    '' }); # There is always a path in an URI
   has $query         => (is => 'rw',  isa => Str|Undef, default => sub { undef });
   has $fragment      => (is => 'rw',  isa => Str|Undef, default => sub { undef });
   has $hier_part     => (is => 'rw',  isa => Str|Undef, default => sub { undef });
@@ -177,7 +197,7 @@ role {
     # No need to reparse. An absolute URI is when scheme and hier_part are defined,
     # and fragment is undefined
     #
-    return Str->check($self->scheme) && Str->check($self->hier_part) && Undef->check($self->fragment);
+    return Str->check($self->$scheme) && Str->check($self->$hier_part) && Undef->check($self->$fragment);
   };
 
   method $_parse => sub {
@@ -357,6 +377,9 @@ role {
   # Grammar rules
   #
   method $_marpa_concat        => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; my $concat = join('', @_); return $MooX::Role::ResourceIdentifier::NORMALIZE ? $self->_normalize($concat) : $concat; };
+  method $_marpa_URI           => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$URI           ($self->$_marpa_concat(@_)); };
+  method $_marpa_URI_reference => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$URI_reference ($self->$_marpa_concat(@_)); };
+  method $_marpa_relative_ref  => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$relative_ref  ($self->$_marpa_concat(@_)); };
   method $_marpa_scheme        => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$scheme        ($self->$_marpa_concat(@_)); };
   method $_marpa_authority     => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$authority     ($self->$_marpa_concat(@_)); };
   method $_marpa_path          => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$path          ($self->$_marpa_concat(@_)); };
