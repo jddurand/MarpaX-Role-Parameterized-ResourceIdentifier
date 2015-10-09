@@ -1,11 +1,11 @@
+use strict;
+use warnings FATAL => 'all';
+
 package MarpaX::Role::Parameterized::ResourceIdentifier;
-use Carp;
-use strictures 2;
 use Types::Standard -all;
 use Marpa::R2;
 use Moo::Role;
 use MooX::Role::Parameterized;
-use MooX::ClassAttribute;
 use MooX::HandlesVia;
 
 # ABSTRACT: MarpaX Parameterized Role for Resource Identifiers as per RFC3986 and RFC3987
@@ -104,10 +104,16 @@ role {
   # From here, there should be NO access to $params except in variables referencing
   # grammar rules (because I wanted to left them with their angle brackets)
   #
+  # Note: why the generated "requires" do not like the class_has ?
+  #
+
+  our $GRAMMAR = Marpa::R2::Scanless::G->new({ source => $BNF_section_data });
+  our $BNF     = ${$BNF_section_data};
+
+  method $grammar => sub { $GRAMMAR };
+  method $bnf     => sub { $BNF };
 
   has $value         => (is => 'rwp', isa => Str,       required => 1, trigger => 1 );
-  class_has $grammar => (is => 'ro',  isa => InstanceOf['Marpa::R2::Scanless:G'], default => sub { Marpa::R2::Scanless::G->new({ source => $BNF_section_data }) } );
-  class_has $bnf     => (is => 'ro',  isa => Str,                                 default => sub { ${$BNF_section_data} } );
   has $scheme        => (is => 'rw',  isa => Str|Undef, default => sub { undef });
   has $authority     => (is => 'rw',  isa => Str|Undef, default => sub { undef });
   has $path          => (is => 'rw',  isa => Str,       default => sub {   ''  }); # There is always a path in an URI
@@ -366,7 +372,12 @@ role {
   method $_marpa_ipv4address   => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$ipv4address   ($self->$_marpa_concat(@_)); };
   method $_marpa_reg_name      => sub { shift; my $self = $MooX::Role::ResourceIdentifier::SELF; return $self->$reg_name      ($self->$_marpa_concat(@_)); };
 
-}
+  foreach (@PUBLIC) {
+    requires "$_";
+  }
+};
+
+1;
 
 =head1 SEE ALSO
 
