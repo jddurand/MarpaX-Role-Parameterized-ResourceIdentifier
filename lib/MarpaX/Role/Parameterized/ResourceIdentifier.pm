@@ -18,7 +18,7 @@ use MooX::HandlesVia;
 
 #
 # URI/IRI are sharing EXACTLY the same implementation algorithm, only some names are changing.
-# 
+#
 # This is why they consume this parameterized role.
 #
 role {
