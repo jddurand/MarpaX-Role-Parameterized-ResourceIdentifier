@@ -5,9 +5,12 @@ package MarpaX::Role::Parameterized::ResourceIdentifier;
 use Carp qw/croak/;
 use Import::Into;
 use Scalar::Does;
+use Scalar::Util qw/blessed/;
 use Marpa::R2;
 use Moo::Role;
 use MooX::Role::Parameterized;
+use Types::Standard -all;
+use Type::Params qw/compile/;
 
 # ABSTRACT: MarpaX Parameterized Role for Resource Identifiers as per RFC3986 and RFC3987
 
@@ -28,16 +31,16 @@ role {
   #
   # Sanity check
   # ------------
-  croak "BNF must exist and be a scalar"    unless exists($params->{BNF});
-  croak "self_ref must exist and do SCALAR" unless exists($params->{self_ref});
-  croak "start must exist and do SCALAR"    unless exists($params->{start});
+  CORE::state $check_BNF = compile(ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier::BNF']);
 
-  my $BNF      = $params->{BNF};
-  my $self_ref = $params->{self_ref};
+  croak "BNF must consume the role MarpaX::Role::Parameterized::ResourceIdentifier" unless exists($params->{BNF}) && $check_BNF->($params->{BNF});
+  croak "start must exist do Str"                                                   unless exists($params->{start}) && Str->check($params->{start});
+
+  my $bnf      = $params->{BNF}->bnf;
   my $start    = $params->{start};
 
-  croak "BNF cannot have 'inaccessible is' (even if commented)" if ($BNF =~ /\binaccessible\s+is\b/);
-  croak "BNF cannot have 'action =>' (even if commented)" if ($BNF =~ /\baction\s+=>/);
+  croak "BNF cannot have 'inaccessible is' (even if commented)" if ($bnf =~ /\binaccessible\s+is\b/);
+  croak "BNF cannot have 'action =>' (even if commented)" if ($bnf =~ /\baction\s+=>/);
 
   my %G1 = ();
   if (exists($params->{G1})) {
@@ -56,30 +59,50 @@ role {
   #
   # The BNF and the grammar that will look like a singleton
   #
-  $BNF = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => " . __PACKAGE__ . "::__action\n$BNF";
-  my $GRAMMAR = Marpa::R2::Scanless::G->new({source => \$BNF});
-  method bnf     => sub { $BNF };
-  method grammar => sub { $GRAMMAR };
-  #
-  # The generic action
-  #
-  method __action => sub {
-    my (undef, @args) = @_;
+  $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => " . __PACKAGE__ . "::__action\n$bnf";
+  my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$params->{BNF}->grammar_option}, source => \$bnf});
+  {
+    no warnings 'redefine';
     #
-    # Specific sub-actions
+    # Inject bnf and grammar methods
     #
-    my $slg         = $Marpa::R2::Context::slg;
-    my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+    method bnf            => sub { $bnf };
+    method grammar        => sub { $GRAMMAR };
     #
-    # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
-    # are safe to enforce it here, eventually.
+    # Inject escape/unescape internal methods
     #
-    $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-    do { $G1{$lhs}->(${$self_ref}, @args) } if exists $G1{$lhs};
+    my $escape   = $params->{BNF}->escape;
+    my $unescape = $params->{BNF}->unescape;
+    method _escape   => sub { goto &$escape   };
+    method _unescape => sub { goto &$unescape };
     #
-    # What we propagage is ALWAYS the concatenation
+    # Inject __parse method
     #
-    join('', @args)
+    method __parse => sub {
+      my ($self, $input) = @_;
+      $self->grammar->parse(\$input, $params->{BNF}->recognizer_option);
+    };
+    #
+    # Inject grammar generic action
+    #
+    method __action => sub {
+      my ($self, @args) = @_;
+      #
+      # We always propate only the concatenation, even if the scheme-specific rules
+      #
+      my $rc = join('', @args);
+      #
+      # Specific sub-actions
+      #
+      my $slg         = $Marpa::R2::Context::slg;
+      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+      #
+      # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
+      # are safe to enforce it here, eventually.
+      #
+      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+      exists $G1{$lhs} ? do { $G1{$lhs}->($self, $rc) } : $rc;
+    }
   }
 };
 
