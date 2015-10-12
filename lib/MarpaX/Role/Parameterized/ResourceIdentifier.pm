@@ -3,6 +3,7 @@ use warnings FATAL => 'all';
 
 package MarpaX::Role::Parameterized::ResourceIdentifier;
 use Carp qw/croak/;
+use Class::Method::Modifiers qw/install_modifier/;
 use Import::Into;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
@@ -34,10 +35,12 @@ role {
   CORE::state $check_BNF = compile(ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier::BNF']);
 
   croak "BNF must consume the role MarpaX::Role::Parameterized::ResourceIdentifier" unless exists($params->{BNF}) && $check_BNF->($params->{BNF});
-  croak "start must exist do Str"                                                   unless exists($params->{start}) && Str->check($params->{start});
+  croak "start must exist and do Str"                                               unless exists($params->{start}) && Str->check($params->{start});
+  croak "package must exist and do Str"                                             unless exists($params->{start}) && Str->check($params->{package});
 
   my $bnf      = $params->{BNF}->bnf;
   my $start    = $params->{start};
+  my $package  = $params->{package};
 
   croak "BNF cannot have 'inaccessible is' (even if commented)" if ($bnf =~ /\binaccessible\s+is\b/);
   croak "BNF cannot have 'action =>' (even if commented)" if ($bnf =~ /\baction\s+=>/);
@@ -59,53 +62,46 @@ role {
   #
   # The BNF and the grammar that will look like a singleton
   #
-  $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => " . __PACKAGE__ . "::__action\n$bnf";
+  $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => ${package}::__action\n$bnf";
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "Cannot open trace filehandle, $!";
   my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$params->{BNF}->grammar_option}, source => \$bnf, trace_file_handle => $trace_file_handle});
-  {
-    no warnings 'redefine';
-    #
-    # Inject bnf and grammar methods
-    #
-    method bnf            => sub { $bnf };
-    method grammar        => sub { $GRAMMAR };
-    #
-    # Inject escape/unescape internal methods
-    #
-    my $escape   = $params->{BNF}->escape;
-    my $unescape = $params->{BNF}->unescape;
-    method _escape   => sub { goto &$escape   };
-    method _unescape => sub { goto &$unescape };
-    #
-    # Inject __parse method
-    #
-    method __parse => sub {
-      my ($self, $input) = @_;
-      $self->grammar->parse(\$input, $params->{BNF}->recognizer_option);
-    };
-    #
-    # Inject grammar generic action
-    #
-    method __action => sub {
-      my ($self, @args) = @_;
-      #
-      # We always propate only the concatenation, even if the scheme-specific rules
-      #
-      my $rc = join('', @args);
-      #
-      # Specific sub-actions
-      #
-      my $slg         = $Marpa::R2::Context::slg;
-      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-      #
-      # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
-      # are safe to enforce it here, eventually.
-      #
-      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-      exists $G1{$lhs} ? do { $G1{$lhs}->($self, $rc) } : $rc;
-    }
-  }
+  #
+  # Inject methods
+  #
+  my $escape   = $params->{BNF}->escape;
+  my $unescape = $params->{BNF}->unescape;
+  install_modifier($package, $package->can('bnf')     ? 'around' : 'fresh', 'bnf',
+                   sub { $bnf } );
+  install_modifier($package, $package->can('grammar') ? 'around' : 'fresh', 'grammar',
+                   sub { $GRAMMAR } );
+  install_modifier($package, $package->can('escape')   ? 'around' : 'fresh', 'escape',
+                   sub { goto &$escape } );
+  install_modifier($package, $package->can('unescape') ? 'around' : 'fresh', 'unescape',
+                   sub { goto &$unescape } );
+  install_modifier($package, $package->can('__parse') ? 'around' : 'fresh', '__parse',
+                   sub { $_[0]->grammar->parse(\$_[1], $params->{BNF}->recognizer_option) }
+                  );
+  install_modifier($package, $package->can('__action') ? 'around' : 'fresh', '__action',
+                   sub {
+                     my ($self, @args) = @_;
+                     #
+                     # We always propate only the concatenation, even if the scheme-specific rules
+                     #
+                     my $rc = join('', @args);
+                     #
+                     # Specific sub-actions
+                     #
+                     my $slg         = $Marpa::R2::Context::slg;
+                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+                     #
+                     # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
+                     # are safe to enforce it here, eventually.
+                     #
+                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+                     exists $G1{$lhs} ? do { $G1{$lhs}->($self, $rc) } : $rc;
+                   }
+                  );
 };
 
 1;
