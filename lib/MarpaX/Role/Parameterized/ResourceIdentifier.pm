@@ -60,7 +60,9 @@ role {
   # The BNF and the grammar that will look like a singleton
   #
   $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => " . __PACKAGE__ . "::__action\n$bnf";
-  my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$params->{BNF}->grammar_option}, source => \$bnf});
+  my $trace;
+  open(my $trace_file_handle, ">", \$trace) || croak "Cannot open trace filehandle, $!";
+  my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$params->{BNF}->grammar_option}, source => \$bnf, trace_file_handle => $trace_file_handle});
   {
     no warnings 'redefine';
     #
