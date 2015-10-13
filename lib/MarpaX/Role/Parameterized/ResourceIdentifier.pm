@@ -32,18 +32,28 @@ role {
   #
   # Sanity check
   # ------------
-  CORE::state $check_BNF = compile(ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier::BNF']);
+  foreach (qw/BNF_package start package/) {
+    croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
+  }
 
-  croak "BNF must consume the role MarpaX::Role::Parameterized::ResourceIdentifier" unless exists($params->{BNF}) && $check_BNF->($params->{BNF});
-  croak "start must exist and do Str"                                               unless exists($params->{start}) && Str->check($params->{start});
-  croak "package must exist and do Str"                                             unless exists($params->{start}) && Str->check($params->{package});
+  my $BNF_package = $params->{BNF_package};
+  my $start       = $params->{start};
+  my $package     = $params->{package};
 
-  my $bnf      = $params->{BNF}->bnf;
-  my $start    = $params->{start};
-  my $package  = $params->{package};
+  my $BNF = $BNF_package->new;
 
-  croak "BNF cannot have 'inaccessible is' (even if commented)" if ($bnf =~ /\binaccessible\s+is\b/);
-  croak "BNF cannot have 'action =>' (even if commented)" if ($bnf =~ /\baction\s+=>/);
+  my $bnf = $BNF->bnf;
+  croak "$BNF->bnf must do Str" unless Str->check($bnf);
+  croak "$BNF->bnf cannot have 'inaccessible is' (even if commented)" if ($bnf =~ /\binaccessible\s+is\b/);
+  croak "$BNF->bnf cannot have 'action =>' (even if commented)" if ($bnf =~ /\baction\s+=>/);
+
+  my $escape   = $BNF->escape;
+  croak "$BNF->escape $escape must do CodeRef" unless CodeRef->check($escape);
+
+  my $unescape = $BNF->unescape;
+  croak "$BNF->unescape must do CodeRef" unless CodeRef->check($unescape);
+
+  $start = "<$start>" if substr($start, 0, 1) ne '<';
 
   my %G1 = ();
   if (exists($params->{G1})) {
@@ -53,6 +63,8 @@ role {
       croak "G1 $_ must be in the form <...>" unless substr($_, 0, 1) eq '<';
       # Every value must do CODE
       croak "G1 $_ value must do CODE" unless does $params->{G1}->{$_}, 'CODE';
+      # It is illegal to provide a value for the start symbol: we want it to return its $self
+      croak "G1 $_ value is illegal for the start rule" if ($_ eq $start);
     }
     %G1 = %{$params->{G1}};
   }
@@ -65,12 +77,10 @@ role {
   $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => ${package}::__action\n$bnf";
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "Cannot open trace filehandle, $!";
-  my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$params->{BNF}->grammar_option}, source => \$bnf, trace_file_handle => $trace_file_handle});
+  my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$BNF->grammar_option}, source => \$bnf, trace_file_handle => $trace_file_handle});
   #
   # Inject methods
   #
-  my $escape   = $params->{BNF}->escape;
-  my $unescape = $params->{BNF}->unescape;
   install_modifier($package, $package->can('bnf')     ? 'around' : 'fresh', 'bnf',
                    sub { $bnf } );
   install_modifier($package, $package->can('grammar') ? 'around' : 'fresh', 'grammar',
@@ -79,14 +89,13 @@ role {
                    sub { goto &$escape } );
   install_modifier($package, $package->can('unescape') ? 'around' : 'fresh', 'unescape',
                    sub { goto &$unescape } );
-  install_modifier($package, $package->can('__parse') ? 'around' : 'fresh', '__parse',
-                   sub { $_[0]->grammar->parse(\$_[1], $params->{BNF}->recognizer_option) }
-                  );
   install_modifier($package, $package->can('__action') ? 'around' : 'fresh', '__action',
                    sub {
                      my ($self, @args) = @_;
                      #
                      # We always propate only the concatenation, even if the scheme-specific rules
+                     # except at the very end, where the final parse value is $self, i.e.
+                     # a structure instance -;
                      #
                      my $rc = join('', @args);
                      #
@@ -99,7 +108,7 @@ role {
                      # are safe to enforce it here, eventually.
                      #
                      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-                     exists $G1{$lhs} ? do { $G1{$lhs}->($self, $rc) } : $rc;
+                     exists $G1{$lhs} ? do { $G1{$lhs}->($self, $rc) } : ($lhs eq $start) ? $self : $rc;
                    }
                   );
 };
