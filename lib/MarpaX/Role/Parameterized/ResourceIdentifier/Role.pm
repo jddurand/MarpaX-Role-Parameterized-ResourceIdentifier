@@ -28,9 +28,6 @@ role {
   #
   # Writen like this because we want to control the class
   #
-  my $has_recognized_scheme = 0;
-
-  #
   # Pre-load _common and _generic implementations, that must exist
   #
   use_module(join('::', $package, '_common'));
@@ -76,26 +73,24 @@ role {
       $input =~ s/^\s+//;
       $input =~ s/\s+$//;
       #
-      # Specific
+      # Specific: may fail, or even not exist
       #
       if ($input =~ /^[A-Za-z][A-Za-z0-9+.-]*(?=:)/p) {
         try {
           my $class = sprintf('%s::%s', $package, ${^MATCH});
           use_module($class);
           $new = $class->new($input);
-          $has_recognized_scheme = 1;
         }
       }
       #
-      # else _generic
+      # else _generic: may fail
       #
-#      try
-      do {
+      try {
         my $class = sprintf('%s::%s', $package, '_generic');
         $new = $class->new($input);
       } if (! $new);
       #
-      # fallback _common
+      # fallback _common : must succeed
       #
       if (! $new) {
         my $class = sprintf('%s::%s', $package, '_common');
@@ -122,7 +117,7 @@ role {
 
   install_modifier($package, 'around', 'new', $around_new);
 
-  method has_recognized_scheme => sub { $has_recognized_scheme };
+  method has_recognized_scheme => sub { Str->check($_[0]->scheme) };
 };
 
 1;

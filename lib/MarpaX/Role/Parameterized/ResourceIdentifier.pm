@@ -8,10 +8,14 @@ use Import::Into;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
 use Marpa::R2;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
 use Type::Params qw/compile/;
+
+my $action_count = 0;
+our $singleton = MarpaX::Role::Parameterized::ResourceIdentifier::Singleton->instance;
 
 # ABSTRACT: MarpaX Parameterized Role for Resource Identifiers as per RFC3986 and RFC3987
 
@@ -74,7 +78,8 @@ role {
   #
   # The BNF and the grammar that will look like a singleton
   #
-  $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => ${package}::__action\n$bnf";
+  my $action_name = sprintf('__action%04d', ++$action_count);
+  $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => ${package}::$action_name\n$bnf";
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "Cannot open trace filehandle, $!";
   my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$BNF->grammar_option}, source => \$bnf, trace_file_handle => $trace_file_handle});
@@ -87,15 +92,19 @@ role {
                    sub { $GRAMMAR } );
   install_modifier($package, $package->can('escape')   ? 'around' : 'fresh', 'escape',
                    sub { goto &$escape } );
-  install_modifier($package, $package->can('unescape') ? 'around' : 'fresh', 'unescape',
-                   sub { goto &$unescape } );
-  install_modifier($package, $package->can('__action') ? 'around' : 'fresh', '__action',
+  #
+  # It is the deeper package that will win, but every layer has its own grammar linked to a MooX::Struct.
+  # And we will use this sub-grammar to fill such MooX::Struct.
+  #
+  $singleton->_set_compiled_grammar_per_package($package, $GRAMMAR);
+  #
+  # And it is exactly for the same reason that $action_name is unique per package
+  #
+  install_modifier($package, 'fresh', $action_name,
                    sub {
                      my ($self, @args) = @_;
                      #
-                     # We always propate only the concatenation, even if the scheme-specific rules
-                     # except at the very end, where the final parse value is $self, i.e.
-                     # a structure instance -;
+                     # We always propate only the concatenation
                      #
                      my $rc = join('', @args);
                      #
@@ -108,9 +117,12 @@ role {
                      # are safe to enforce it here, eventually.
                      #
                      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-                     exists $G1{$lhs} ? do { $G1{$lhs}->($self, $rc) } : ($lhs eq $start) ? $self : $rc;
+                     $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
+                     $self->_logger->tracef('%s: %-30s ::= %s < %s > %s', $BNF_package, $lhs, join(' ', @rhs), \@args, $rc);
+                     $rc;
                    }
                   );
+
 };
 
 1;
