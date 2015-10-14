@@ -14,19 +14,39 @@ use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
+use MooX::Role::Logger;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
-use MooX::Role::Logger;
 use MooX::Struct -rw,
   Generic => [
-              hier_part => [ isa => Str|Undef, default => sub { undef } ],
-              query     => [ isa => Str|Undef, default => sub { undef } ],
-              authority => [ isa => Str|Undef, default => sub { undef } ],
-              userinfo  => [ isa => Str|Undef, default => sub { undef } ],
-              host      => [ isa => Str|Undef, default => sub { undef } ],
-              port      => [ isa => Str|Undef, default => sub { undef } ],
-            ];
+              iri             => [ isa => Str|Undef,     default => sub { undef } ],
+              scheme          => [ isa => Str|Undef,     default => sub { undef } ],
+              hier_part       => [ isa => Str|Undef,     default => sub { undef } ],
+              query           => [ isa => Str|Undef,     default => sub { undef } ],
+              ifragment       => [ isa => Str|Undef,     default => sub { undef } ],
+              isegment        => [ isa => Str|Undef,     default => sub { undef } ],
+              authority       => [ isa => Str|Undef,     default => sub { undef } ],
+              path            => [ isa => Str|Undef,     default => sub { undef } ],
+              path_abempty    => [ isa => Str|Undef,     default => sub { undef } ],
+              path_absolute   => [ isa => Str|Undef,     default => sub { undef } ],
+              path_noscheme   => [ isa => Str|Undef,     default => sub { undef } ],
+              path_rootless   => [ isa => Str|Undef,     default => sub { undef } ],
+              path_empty      => [ isa => Str|Undef,     default => sub { undef } ],
+              relative_ref    => [ isa => Str|Undef,     default => sub { undef } ],
+              relative_part   => [ isa => Str|Undef,     default => sub { undef } ],
+              userinfo        => [ isa => Str|Undef,     default => sub { undef } ],
+              host            => [ isa => Str|Undef,     default => sub { undef } ],
+              port            => [ isa => Str|Undef,     default => sub { undef } ],
+              ip_literal      => [ isa => Str|Undef,     default => sub { undef } ],
+              ipv6_address    => [ isa => Str|Undef,     default => sub { undef } ],
+              ipv6_addrz      => [ isa => Str|Undef,     default => sub { undef } ],
+              ipvfuture       => [ isa => Str|Undef,     default => sub { undef } ],
+              zoneid          => [ isa => Str|Undef,     default => sub { undef } ],
+              segments        => [ isa => ArrayRef[Str], default => sub { [] } ],
+              fragments       => [ isa => ArrayRef[Str], default => sub { [] } ],
+             ];
 use Role::Tiny;
+use Scalar::Util qw/blessed/;
 
 has _struct_generic => ( is => 'rw',  isa => Object);
 
@@ -46,7 +66,13 @@ role {
   # This is basically the inner of MooX::Role::Parameterized::With
   #
   use_module('MarpaX::Role::Parameterized::ResourceIdentifier')->apply($params, target => $package);
+  #
+  # Logging
+  #
   Role::Tiny->apply_roles_to_package($package, qw/MooX::Role::Logger/);
+  install_modifier($package, $package->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
+  Role::Tiny->apply_roles_to_package(Generic, qw/MooX::Role::Logger/);
+  install_modifier(Generic, Generic->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
 
   install_modifier($package, 'around', '_trigger_input',
                    sub {
@@ -60,44 +86,29 @@ role {
                      $r->read(\$input);
                      croak 'Parse of the input is ambiguous' if $r->ambiguous;
                      my $struct_generic = $self->_struct_generic(Generic->new);
-                     Role::Tiny->apply_roles_to_object($struct_generic, qw/MooX::Role::Logger/);
                      $self->_logger->tracef('%s: Getting parse tree value', $package);
                      $r->value($struct_generic);
-                     $self->_logger->tracef('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
-                     $self->_logger->tracef('%s: Back to orig call', $package);
+                     $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
                      $self->$orig($input);
                    }
                   );
 
-  method hier_part => sub {
-    my $self = shift;
-    $self->_struct_generic->hier_part(@_);
-  };
-
-  method query => sub {
-    my $self = shift;
-    $self->_struct_generic->query(@_);
-  };
-
-  method authority => sub {
-    my $self = shift;
-    $self->_struct_generic->authority(@_);
-  };
-
-  method userinfo => sub {
-    my $self = shift;
-    $self->_struct_generic->host(@_);
-  };
-
-  method host => sub {
-    my $self = shift;
-    $self->_struct_generic->host(@_);
-  };
-
-  method port => sub {
-    my $self = shift;
-    $self->_struct_generic->port(@_);
-  };
+  foreach (Generic->FIELDS) {
+    my $can = $package->can($_);
+    install_modifier($package,
+                     $can ? 'around' : 'fresh',
+                     $_,
+                     $can ?
+                     sub {
+                       shift; # orig
+                       shift->_struct_generic->$_(@_);
+                     }
+                     :
+                     sub {
+                       shift->_struct_generic->$_(@_);
+                     }
+                    );
+  }
 };
 
 with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common';

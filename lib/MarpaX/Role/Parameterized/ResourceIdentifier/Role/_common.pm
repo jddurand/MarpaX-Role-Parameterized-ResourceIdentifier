@@ -24,6 +24,7 @@ use MooX::Struct -rw,
              fragment => [ isa => Str|Undef, default => sub { undef } ]  # Can be undef
             ];
 use Role::Tiny;
+use Scalar::Util qw/blessed/;
 
 has _struct_common => ( is => 'rw',  isa => Object);
 
@@ -40,7 +41,13 @@ role {
 
   use_module($BNF_package);
   use_module('MarpaX::Role::Parameterized::ResourceIdentifier')->apply($params, target => $package);
+  #
+  # Logging
+  #
   Role::Tiny->apply_roles_to_package($package, qw/MooX::Role::Logger/);
+  install_modifier($package, $package->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { __PACKAGE__ });
+  Role::Tiny->apply_roles_to_package(Common, qw/MooX::Role::Logger/);
+  install_modifier(Common, Common->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
 
   install_modifier($package, 'around', '_trigger_input',
                    sub {
@@ -54,11 +61,9 @@ role {
                      $r->read(\$input);
                      croak 'Parse of the input is ambiguous' if $r->ambiguous;
                      my $struct_common = $self->_struct_common(Common->new);
-                     Role::Tiny->apply_roles_to_object($struct_common, qw/MooX::Role::Logger/);
                      $self->_logger->tracef('%s: Getting parse tree value', $package);
                      $r->value($struct_common);
-                     $self->_logger->tracef('%s: Parse tree value is %s', $package, $struct_common->TO_HASH);
-                     $self->_logger->tracef('%s: Back to orig call', $package);
+                     $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_common->TO_HASH);
                      $self->$orig($input);
                    }
                   );
