@@ -118,7 +118,7 @@ role {
                      #
                      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
                      $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
-                     $self->_logger->tracef('%s: %-30s ::= %s < %s > %s', $BNF_package, $lhs, join(' ', @rhs), \@args, $rc);
+                     $self->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
                      $rc;
                    }
                   );
