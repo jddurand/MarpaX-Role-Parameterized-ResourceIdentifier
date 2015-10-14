@@ -25,8 +25,7 @@ use MooX::Struct -rw,
               port      => [ isa => Str|Undef, default => sub { undef } ],
             ];
 
-has input   => ( is => 'rwp', isa => Str,    required => 1, trigger => 1);
-has _struct => ( is => 'rw',  isa => Object);
+has _struct_generic => ( is => 'rw',  isa => Object);
 
 role {
   my $params = shift;
@@ -43,48 +42,42 @@ role {
   #
   use_module('MarpaX::Role::Parameterized::ResourceIdentifier')->apply($params, target => $package);
 
-  method BUILDARGS => sub {
-    print STDERR "BUILDARGS _generic\n";
-    print STDERR "=================\n";
-    use Devel::StackTrace;
-    my $trace = Devel::StackTrace->new();
-    print STDERR $trace->as_string;
-
-    my ($self, @args) = @_;
-    unshift(@args, 'input') if @args % 2;
-    return { @args };
-  };
-
-  method _trigger_input => sub {
-    my ($self, $input) = @_;
-    # $self->grammar->parse returns a reference to a value
-    $self->_struct(${$self->grammar->parse(
-                                           \$input,
-                                           {
-                                            %{$BNF_package->recognizer_option},
-                                            semantics_package => Generic
-                                           }
-                                          )
+  install_modifier($package, 'around', '_trigger_input',
+                   sub {
+                     my ($orig, $self, $input) = @_;
+                     $self->$orig($input);
+                     $self->_struct_generic(${$self->grammar->parse(
+                                                                    \$input,
+                                                                    {
+                                                                     %{$BNF_package->recognizer_option},
+                                                                     semantics_package => Generic
+                                                                    }
+                                                                   )
+                                            }
+                                           )
                    }
-                  )
-  };
+                  );
 
   method hier_part => sub {
     my $self = shift;
-    $self->_struct->hier_part(@_);
+    $self->_struct_generic->hier_part(@_);
   };
 
   method query => sub {
     my $self = shift;
-    $self->_struct->query(@_);
+    $self->_struct_generic->query(@_);
   };
 
   method authority => sub {
     my $self = shift;
-    $self->_struct->authority(@_);
+    $self->_struct_generic->authority(@_);
   };
 };
 
 with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common';
+
+requires 'hier_part';
+requires 'query';
+requires 'authority';
 
 1;

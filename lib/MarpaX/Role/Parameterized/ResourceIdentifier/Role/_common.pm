@@ -22,8 +22,7 @@ use MooX::Struct -rw,
              fragment => [ isa => Str|Undef, default => sub { undef } ]  # Can be undef
             ];
 
-has input   => ( is => 'rwp', isa => Str,    required => 1, trigger => 1);
-has _struct => ( is => 'rw',  isa => Object);
+has _struct_common => ( is => 'rw',  isa => Object);
 
 role {
   my $params = shift;
@@ -34,57 +33,53 @@ role {
   my $package      = $params->{package};
   my $BNF_package  = $params->{BNF_package};
 
+  print STDERR "==> IN " . __PACKAGE__ . " APPLIED TO $package\n";
+
   use_module($BNF_package);
-  #
-  # This is basically the inner of MooX::Role::Parameterized::With
-  #
   use_module('MarpaX::Role::Parameterized::ResourceIdentifier')->apply($params, target => $package);
 
-  method BUILDARGS => sub {
-    print STDERR "BUILDARGS $package\n";
-    print STDERR "=================\n";
-    use Devel::StackTrace;
-    my $trace = Devel::StackTrace->new();
-    print STDERR $trace->as_string;
-
-    my ($self, @args) = @_;
-    unshift(@args, 'input') if @args % 2;
-    return { @args };
-  };
-
-  method _trigger_input => sub {
-    my ($self, $input) = @_;
-    # $self->grammar->parse returns a reference to a value
-    $self->_struct(${$self->grammar->parse(
-                                           \$input,
-                                           {
-                                            %{$BNF_package->recognizer_option},
-                                            semantics_package => Common
+  install_modifier($package, 'around', '_trigger_input',
+                   sub {
+                     my ($orig, $self, $input) = @_;
+                     $self->$orig($input);
+                     $self->_struct_common(${$self->grammar->parse(
+                                                                   \$input,
+                                                                   {
+                                                                    %{$BNF_package->recognizer_option},
+                                                                    semantics_package => Common
+                                                                   }
+                                                                  )
                                            }
                                           )
                    }
-                  )
-  };
+                  );
 
   method has_recognized_scheme => sub {
     my ($self) = @_;
-    Str->check($self->_struct->scheme)
+    Str->check($self->_struct_common->scheme)
   };
 
   method scheme => sub {
     my $self = shift;
-    $self->_struct->scheme(@_);
+    $self->_struct_common->scheme(@_);
   };
 
   method opaque => sub {
     my $self = shift;
-    $self->_struct->opaque(@_);
+    $self->_struct_common->opaque(@_);
   };
 
   method fragment => sub {
     my $self = shift;
-    $self->_struct->fragment(@_);
+    $self->_struct_common->fragment(@_);
   };
 };
+
+with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top';
+
+requires 'has_recognized_scheme';
+requires 'scheme';
+requires 'opaque';
+requires 'fragment';
 
 1;

@@ -84,12 +84,13 @@ role {
           use_module($class);
           $new = $class->new($input);
           $has_recognized_scheme = 1;
-        };
+        }
       }
       #
       # else _generic
       #
-      try {
+#      try
+      do {
         my $class = sprintf('%s::%s', $package, '_generic');
         $new = $class->new($input);
       } if (! $new);
