@@ -63,6 +63,11 @@ role {
     }
 
     my $new;
+    #
+    # Extra check that should never be false, because this role is only included by
+    # RFCXXXX.pm - but who knows: we want to affect only the new of the class in which
+    # we are injected
+    #
     if ($class eq $package) {
       #
       # Copy from URI:
