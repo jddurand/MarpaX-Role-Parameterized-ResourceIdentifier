@@ -14,6 +14,7 @@ use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
+BEGIN { with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top' }
 use MooX::Role::Parameterized;
 use Types::Standard -all;
 use MooX::Role::Logger;
@@ -68,35 +69,23 @@ role {
                    }
                   );
 
-  method has_recognized_scheme => sub {
-    my ($self) = @_;
-    Str->check($self->_struct_common->scheme)
-  };
+  method has_recognized_scheme => sub { Str->check($_[0]->_struct_common->scheme) };
 
-  method scheme => sub {
-    my $self = shift;
-    $self->_struct_common->scheme(@_);
-  };
-
-  method opaque => sub {
-    my $self = shift;
-    $self->_struct_common->opaque(@_);
-  };
-
-  method fragment => sub {
-    my $self = shift;
-    $self->_struct_common->fragment(@_);
-  };
+  foreach (Common->FIELDS) {
+    #
+    # _struct_common is the first structure generated: there should (must) be no
+    # method of this name already
+    #
+    method $_ => sub { shift->_struct_common->$_(@_) };
+  }
 };
 
-with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top';
-
+requires 'has_recognized_scheme';
 #
 # Make sure all fields of the structure are wrapped
 #
 foreach (Common->FIELDS) {
   eval "requires '$_'";
 }
-requires 'has_recognized_scheme';
 
 1;

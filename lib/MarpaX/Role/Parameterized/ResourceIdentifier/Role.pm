@@ -122,7 +122,11 @@ role {
 
   install_modifier($package, 'around', 'new', $around_new);
 
-  method has_recognized_scheme => sub { Str->check($_[0]->scheme) };
+  method clone => sub { $package->new($_[0]->input) };
+
 };
+
+requires 'new';
+requires 'clone';
 
 1;

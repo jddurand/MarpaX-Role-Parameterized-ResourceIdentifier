@@ -14,6 +14,7 @@ use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
+BEGIN { with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common' }
 use MooX::Role::Logger;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
@@ -94,24 +95,18 @@ role {
                   );
 
   foreach (Generic->FIELDS) {
+    #
+    # We know in advance which methods already exist in the parent,
+    # sure, but let's use this generic method generation
+    #
     my $can = $package->can($_);
     install_modifier($package,
                      $can ? 'around' : 'fresh',
                      $_,
-                     $can ?
-                     sub {
-                       shift; # orig
-                       shift->_struct_generic->$_(@_);
-                     }
-                     :
-                     sub {
-                       shift->_struct_generic->$_(@_);
-                     }
+                     $can ? sub { shift; shift->_struct_generic->$_(@_) } : sub { shift->_struct_generic->$_(@_) }
                     );
   }
 };
-
-with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common';
 
 #
 # Make sure all fields of the structure are wrapped
