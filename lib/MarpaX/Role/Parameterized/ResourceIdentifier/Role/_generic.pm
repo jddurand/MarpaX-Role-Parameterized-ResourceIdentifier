@@ -14,7 +14,6 @@ use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
-BEGIN { with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common' }
 use MooX::Role::Logger;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
@@ -71,9 +70,13 @@ role {
   # Logging
   #
   Role::Tiny->apply_roles_to_package($package, qw/MooX::Role::Logger/);
-  install_modifier($package, $package->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
+  install_modifier($package, 'around', '_build__logger_category', sub { $package });
   Role::Tiny->apply_roles_to_package(Generic, qw/MooX::Role::Logger/);
-  install_modifier(Generic, Generic->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
+  install_modifier(Generic, 'around', '_build__logger_category', sub { $package });
+  #
+  # "Parent" role
+  #
+  Role::Tiny->apply_roles_to_package($package, qw/MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common/);
 
   install_modifier($package, 'around', '_trigger_input',
                    sub {
@@ -95,15 +98,12 @@ role {
                   );
 
   foreach (Generic->FIELDS) {
-    #
-    # We know in advance which methods already exist in the parent,
-    # sure, but let's use this generic method generation
-    #
-    my $can = $package->can($_);
+    my $meth = $_;
+    my $can = $package->can($meth);
     install_modifier($package,
                      $can ? 'around' : 'fresh',
-                     $_,
-                     $can ? sub { shift; shift->_struct_generic->$_(@_) } : sub { shift->_struct_generic->$_(@_) }
+                     $meth,
+                     $can ? sub { shift; shift->_struct_generic->$meth(@_) } : sub { shift->_struct_generic->$meth(@_) }
                     );
   }
 };

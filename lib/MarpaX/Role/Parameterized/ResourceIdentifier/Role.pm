@@ -19,6 +19,8 @@ use Try::Tiny;
 use Types::Standard -all;
 use Types::Encodings qw/Bytes/;
 
+has input => ( is => 'rwp', isa => Str, required => 1, trigger => 1);
+
 role {
   my $params = shift;
 
@@ -30,8 +32,11 @@ role {
   #
   # Pre-load _common and _generic implementations, that must exist
   #
-  use_module(join('::', $package, '_common'));
-  use_module(join('::', $package, '_generic'));
+  my @namespace = split(/::/, $package);
+  pop @namespace;
+  my $namespace = join('::', @namespace);
+  use_module(join('::', $namespace, '_common'));
+  use_module(join('::', $namespace, '_generic'));
 
   my $around_new = sub {
     my ($orig, $class) = (shift, shift);
@@ -124,9 +129,19 @@ role {
 
   method clone => sub { $package->new($_[0]->input) };
 
+  method BUILDARGS => sub {
+    my ($self, @args) = @_;
+    unshift(@args, 'input') if @args % 2;
+    return { @args };
+  };
+
+  method _trigger_input => sub {
+  };
+
 };
 
 requires 'new';
 requires 'clone';
+requires '_trigger_input';
 
 1;
