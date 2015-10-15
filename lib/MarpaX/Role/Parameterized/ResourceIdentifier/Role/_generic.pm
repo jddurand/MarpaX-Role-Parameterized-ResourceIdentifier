@@ -17,6 +17,7 @@ use Moo::Role;
 use MooX::Role::Logger;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
+use Try::Tiny;
 use MooX::Struct -rw,
   Generic => [
               iri             => [ isa => Str|Undef,     default => sub { undef } ],
@@ -87,12 +88,16 @@ role {
                                                           grammar => $singleton->_get_compiled_grammar_per_package($package)
                                                          }
                                                         );
-                     $r->read(\$input);
-                     croak 'Parse of the input is ambiguous' if $r->ambiguous;
                      my $struct_generic = $self->_struct_generic(Generic->new);
-                     $self->_logger->tracef('%s: Getting parse tree value', $package);
-                     $r->value($struct_generic);
-                     $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
+                     try {
+                       $r->read(\$input);
+                       croak 'Parse of the input is ambiguous' if $r->ambiguous;
+                       $self->_logger->tracef('%s: Getting parse tree value', $package);
+                       $r->value($struct_generic);
+                       $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
+                     } catch {
+                       croak $_ if (! $self->_uri_compat);
+                     };
                      $self->$orig($input);
                    }
                   );
@@ -100,10 +105,16 @@ role {
   foreach (Generic->FIELDS) {
     my $meth = $_;
     my $can = $package->can($meth);
+    my $code = sub {
+      my ($self, @args) = @_;
+      my $rc = $self->_struct_generic->$meth;
+      $self->_struct_generic->$meth(@_);
+      $rc
+    };
     install_modifier($package,
                      $can ? 'around' : 'fresh',
                      $meth,
-                     $can ? sub { shift; shift->_struct_generic->$meth(@_) } : sub { shift->_struct_generic->$meth(@_) }
+                     $can ? sub { shift; goto &$code } : $code
                     );
   }
 };

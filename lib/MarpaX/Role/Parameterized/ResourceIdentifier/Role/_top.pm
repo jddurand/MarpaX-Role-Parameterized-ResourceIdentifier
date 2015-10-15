@@ -18,6 +18,20 @@ use Try::Tiny;
 use Types::Standard -all;
 use Types::Encodings qw/Bytes/;
 
+my $URI_COMPAT = 1;
+
+sub import {
+  my $package = shift;
+  if (grep {$_ eq 'URI_COMPAT'} @_) {
+    #
+    # If this evals to a hash, take the value
+    #
+    my %args;
+    eval { %args = @_ };
+    $URI_COMPAT = $args{URI_COMPAT} // 0;
+  }
+}
+
 sub _BUILDARGS {
   my $class = shift;
 
@@ -83,6 +97,7 @@ sub new {
   my $args = $class->_BUILDARGS(@_);
   my $input = $args->{input};
   my $scheme = $args->{scheme};
+  local $MarpaX::Role::Parameterized::ResourceIdentifier::URI_COMPAT = $URI_COMPAT;
   #
   # Specific: may fail, or even not exist
   #
@@ -92,6 +107,10 @@ sub new {
       my $subclass = sprintf('%s::%s', $class, ${^MATCH});
       use_module($subclass);
       $self = $subclass->new($input);
+      #
+      # Only in this case, the scheme is recognized
+      #
+      $self->_set_has_recognized_scheme(!!1);
     } catch {
       warn $_;
       return;
@@ -118,7 +137,6 @@ sub new {
     use_module($subclass);
     $self = $subclass->new($input);
   }
-
   #
   # scheme argument
   #

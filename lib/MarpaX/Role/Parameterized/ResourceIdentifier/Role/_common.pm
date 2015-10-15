@@ -26,8 +26,10 @@ use MooX::Struct -rw,
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
 
-has input => ( is => 'ro', isa => Str, required => 1, trigger => 1);
-has _struct_common => ( is => 'rw',  isa => Object);
+has input                 => ( is => 'ro',  isa => Str, required => 1, trigger => 1);
+has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { !!0 } );
+has _struct_common        => ( is => 'rw',  isa => Object);
+has _uri_compat           => ( is => 'ro',  isa => Bool, default => sub { $MarpaX::Role::Parameterized::ResourceIdentifier::URI_COMPAT } );
 
 our $singleton = MarpaX::Role::Parameterized::ResourceIdentifier::Singleton->instance;
 
@@ -72,12 +74,16 @@ role {
     $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_common->TO_HASH);
   };
 
-  method has_recognized_scheme => sub { Str->check($_[0]->_struct_common->scheme) };
-
   foreach (Common->FIELDS) {
     my $meth = $_;
     my $can = $package->can($meth);
-    install_modifier($package, 'fresh', $meth, sub { shift->_struct_common->$meth(@_) });
+    my $code = sub {
+      my ($self, @args) = @_;
+      my $rc = $self->_struct_generic->$meth;
+      $self->_struct_generic->$meth(@_);
+      $rc
+    };
+    install_modifier($package, 'fresh', $meth, $code);
   }
 };
 
