@@ -25,9 +25,10 @@ use MooX::Struct -rw,
             ];
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
+use constant { FALSE => !!0 };
 
 has input                 => ( is => 'ro',  isa => Str, required => 1, trigger => 1);
-has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { !!0 } );
+has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { FALSE } );
 has _struct_common        => ( is => 'rw',  isa => Object);
 has _uri_compat           => ( is => 'ro',  isa => Bool, default => sub { $MarpaX::Role::Parameterized::ResourceIdentifier::URI_COMPAT } );
 
@@ -86,8 +87,8 @@ role {
     install_modifier($package, 'fresh', $meth, $code);
   }
 
-  install_modifier($package, 'fresh', 'is_relative', sub { 0 });
-  install_modifier($package, 'fresh', 'is_absolute', sub { 0 });
+  install_modifier($package, 'fresh', 'is_relative', sub { FALSE });
+  install_modifier($package, 'fresh', 'is_absolute', sub { FALSE });
 };
 
 requires 'has_recognized_scheme';

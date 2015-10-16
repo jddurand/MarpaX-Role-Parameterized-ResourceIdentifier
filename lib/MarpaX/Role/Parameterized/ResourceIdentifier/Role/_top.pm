@@ -18,6 +18,7 @@ use Type::Params qw/compile/;
 use Types::Standard -all;
 use Types::TypeTiny qw/StringLike/;
 use Types::Encodings qw/Bytes/;
+use constant  { TRUE => !!1 };
 
 my $URI_COMPAT = 1;
 my $_CALLER = undef;
@@ -113,7 +114,7 @@ sub new {
       #
       # Only in this case, the scheme is recognized
       #
-      $self->_set_has_recognized_scheme(!!1);
+      $self->_set_has_recognized_scheme(TRUE);
     }
   }
   #
@@ -137,11 +138,16 @@ sub new {
   #
   # scheme argument
   #
-  if (Str->check($scheme)) {
+  if (! Undef->check($scheme)) {
     #
     # Used only when input is relative
     #
     if ($self->is_relative) {
+      #
+      # Per def $scheme is passing $schemelike|$absolute_reference|$stringified_absolute_reference :
+      # it is recognized even if $self->scheme would return undef.
+      #
+      $self->_set_has_recognized_scheme(TRUE);
     }
   }
 
