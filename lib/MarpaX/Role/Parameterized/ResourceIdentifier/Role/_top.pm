@@ -21,22 +21,9 @@ use Types::TypeTiny qw/StringLike/;
 use Types::Encodings qw/Bytes/;
 use constant  { TRUE => !!1 };
 
-my $URI_COMPAT = 1;
 my $_CALLER = undef;
 
-sub import {
-  my $package = shift;
-  $_CALLER = caller;
-
-  if (grep {$_ eq 'URI_COMPAT'} @_) {
-    #
-    # If this evals to a hash, take the value
-    #
-    my %args;
-    eval { %args = @_ };
-    $URI_COMPAT = $args{URI_COMPAT} // 0;
-  }
-}
+sub import { $_CALLER = caller }
 
 our $schemelike = "Type::Tiny"->new(
                                     name       => "SchemeLike",
@@ -138,7 +125,6 @@ sub new {
   my $args = $class->_BUILDARGS(@_);
   my $input = $args->{input};
   my $scheme = $args->{scheme};
-  local $MarpaX::Role::Parameterized::ResourceIdentifier::URI_COMPAT = $URI_COMPAT;
   #
   # Specific: may fail, or even not exist
   #

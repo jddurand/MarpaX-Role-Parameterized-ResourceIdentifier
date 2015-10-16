@@ -16,6 +16,7 @@ use Type::Params qw/compile/;
 
 my $action_count = 0;
 our $singleton = MarpaX::Role::Parameterized::ResourceIdentifier::Singleton->instance;
+our $WITH_LOGGER = $ENV{'MarpaX::ResourceIdentifier::WITH_LOGGER'};
 
 # ABSTRACT: MarpaX Parameterized Role for Resource Identifiers as per RFC3986 and RFC3987
 
@@ -80,6 +81,9 @@ role {
   #
   my $action_name = sprintf('__action%04d', ++$action_count);
   $bnf = "inaccessible is ok by default\n:start ::= $start\n:default ::= action => ${package}::$action_name\n$bnf";
+  #
+  # In any case, we want Marpa to be "silent"
+  #
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "Cannot open trace filehandle, $!";
   my $GRAMMAR = Marpa::R2::Scanless::G->new({%{$BNF->grammar_option}, source => \$bnf, trace_file_handle => $trace_file_handle});
@@ -99,29 +103,52 @@ role {
   $singleton->_set_compiled_grammar_per_package($package, $GRAMMAR);
   #
   # And it is exactly for the same reason that $action_name is unique per package
+  # For performance reason, we have two versions w/o logging
   #
-  install_modifier($package, 'fresh', $action_name,
-                   sub {
-                     my ($self, @args) = @_;
-                     #
-                     # We always propate only the concatenation
-                     #
-                     my $rc = join('', @args);
-                     #
-                     # Specific sub-actions
-                     #
-                     my $slg         = $Marpa::R2::Context::slg;
-                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-                     #
-                     # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
-                     # are safe to enforce it here, eventually.
-                     #
-                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-                     $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
-                     $self->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
-                     $rc;
-                   }
-                  );
+  my $action_name_sub;
+  if ($WITH_LOGGER) {
+    $action_name_sub = sub {
+      my ($self, @args) = @_;
+      #
+      # We always propate only the concatenation
+      #
+      my $rc = join('', @args);
+      #
+      # Specific sub-actions
+      #
+      my $slg         = $Marpa::R2::Context::slg;
+      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+      #
+      # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
+      # are safe to enforce it here, eventually.
+      #
+      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+      $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
+      $self->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
+      $rc;
+    }
+  } else {
+    $action_name_sub = sub {
+      my ($self, @args) = @_;
+      #
+      # We always propate only the concatenation
+      #
+      my $rc = join('', @args);
+      #
+      # Specific sub-actions
+      #
+      my $slg         = $Marpa::R2::Context::slg;
+      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+      #
+      # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
+      # are safe to enforce it here, eventually.
+      #
+      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+      $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
+      $rc;
+    }
+  }
+  install_modifier($package, 'fresh', $action_name, $action_name_sub);
 
 };
 
