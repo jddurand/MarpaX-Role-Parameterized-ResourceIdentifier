@@ -9,6 +9,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top;
 
 # AUTHORITY
 
+use Carp qw/croak/;
 use Encode qw/decode/;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
@@ -93,6 +94,42 @@ sub _BUILDARGS {
   $args
 }
 
+sub _new_from_specific {
+  my ($class, $specific, $input) = @_;
+
+  my $subclass = sprintf('%s::%s', $class, $specific);
+
+  my $self;
+  try {
+    use_module($subclass);
+    $self = $subclass->new($input);
+    $self->_set_has_recognized_scheme(TRUE);
+  };
+  $self
+}
+
+sub _new_from_generic {
+  my ($class, $input) = @_;
+
+  my $subclass = sprintf('%s::%s', $class, '_generic');
+
+  my $self;
+  try {
+    use_module($subclass);
+    $self = $subclass->new($input);
+  };
+  $self
+}
+
+sub _new_from_common {
+  my ($class, $input) = @_;
+
+  my $subclass = sprintf('%s::%s', $class, '_common');
+  use_module($subclass);
+
+  $subclass->new($input)
+}
+
 sub new {
   my $class = shift;
   #
@@ -107,34 +144,16 @@ sub new {
   #
   my $self;
   if ($input =~ /^[A-Za-z][A-Za-z0-9+.-]*(?=:)/p) {
-    try {
-      my $subclass = sprintf('%s::%s', $class, ${^MATCH});
-      use_module($subclass);
-      $self = $subclass->new($input);
-      #
-      # Only in this case, the scheme is recognized
-      #
-      $self->_set_has_recognized_scheme(TRUE);
-    }
+    $self = $class->_new_from_specific(${^MATCH}, $input);
   }
   #
   # else _generic: may fail unless URI_COMPAT
   #
-  if (! $self) {
-    try {
-      my $subclass = sprintf('%s::%s', $class, '_generic');
-      use_module($subclass);
-      $self = $subclass->new($input);
-    }
-  }
+  $self = $class->_new_from_generic($input) if (! $self);
   #
   # fallback _common : must succeed
   #
-  if (! $self) {
-    my $subclass = sprintf('%s::%s', $class, '_common');
-    use_module($subclass);
-    $self = $subclass->new($input);
-  }
+  $self = $class->_new_from_common($input) if (! $self);
   #
   # scheme argument
   #
@@ -144,10 +163,19 @@ sub new {
     #
     if ($self->is_relative) {
       #
-      # Per def $scheme is passing $schemelike|$absolute_reference|$stringified_absolute_reference :
-      # it is recognized even if $self->scheme would return undef.
+      # Per def $scheme is passing $schemelike|$absolute_reference|$stringified_absolute_reference
       #
-      $self->_set_has_recognized_scheme(TRUE);
+      my $real_scheme;
+      if ($schemelike->check($scheme)) {
+        $real_scheme = $scheme;
+      } elsif ($absolute_reference->check($scheme)) {
+        $real_scheme = $scheme->scheme;
+      } elsif ($stringified_absolute_reference->check($scheme)) {
+        $real_scheme = $_CALLER->new($scheme)->scheme;
+      } else {
+        croak 'Impossible case';
+      }
+      $self = $class->_new_from_specific($real_scheme, $input) // $self;
     }
   }
 
