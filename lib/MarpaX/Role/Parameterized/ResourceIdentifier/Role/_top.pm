@@ -20,9 +20,12 @@ use Types::TypeTiny qw/StringLike/;
 use Types::Encodings qw/Bytes/;
 
 my $URI_COMPAT = 1;
+my $_CALLER = undef;
 
 sub import {
   my $package = shift;
+  $_CALLER = caller;
+
   if (grep {$_ eq 'URI_COMPAT'} @_) {
     #
     # If this evals to a hash, take the value
@@ -32,7 +35,24 @@ sub import {
     $URI_COMPAT = $args{URI_COMPAT} // 0;
   }
 }
-our $check1 = compile(StringLike|ArrayRef, Maybe[Str|ConsumerOf[__PACKAGE__]]);
+
+our $schemelike = "Type::Tiny"->new(
+                                    name       => "SchemeLike",
+                                    constraint => sub { $_ =~ /^[A-Za-z][A-Za-z0-9+.-]*$/ },
+                                    message    => sub { "$_ ain't looking like a scheme" },
+                                   );
+
+our $absolute_reference = "Type::Tiny"->new(
+                                            name       => "AbsoluteResourceIdentifier",
+                                            constraint => sub { ConsumerOf[__PACKAGE__]->check($_) && $_->is_absolute },
+                                            message    => sub { "$_ ain't an absolute resource identifier" },
+                                           );
+my $stringified_absolute_reference = "Type::Tiny"->new(
+                                                       name       => "StringifiedAbsoluteResourceIdentifier",
+                                                       constraint => sub { Str->check($_) && $_CALLER->can('new') && $absolute_reference->check($_CALLER->new($_)) },
+                                                       message    => sub { "$_ ain't a stringified absolute resource identifier" },
+                                                      );
+our $check1 = compile(StringLike|ArrayRef, Maybe[$schemelike|$absolute_reference|$stringified_absolute_reference]);
 our $check2 = compile(Str, Bytes, Maybe[Int]);
 
 sub _BUILDARGS {
