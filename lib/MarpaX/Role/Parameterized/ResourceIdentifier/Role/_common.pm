@@ -85,6 +85,9 @@ role {
     };
     install_modifier($package, 'fresh', $meth, $code);
   }
+
+  install_modifier($package, 'fresh', 'is_relative', sub { 0 });
+  install_modifier($package, 'fresh', 'is_absolute', sub { 0 });
 };
 
 requires 'has_recognized_scheme';
@@ -94,5 +97,10 @@ requires 'has_recognized_scheme';
 foreach (Common->FIELDS) {
   eval "requires '$_'";
 }
+#
+# And add some methods that every object must do
+#
+requires 'is_relative';
+requires 'is_absolute';
 
 1;
