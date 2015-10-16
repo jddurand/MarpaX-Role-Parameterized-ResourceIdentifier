@@ -94,22 +94,16 @@ sub new {
       # Only in this case, the scheme is recognized
       #
       $self->_set_has_recognized_scheme(!!1);
-    } catch {
-      warn $_;
-      return;
     }
   }
   #
-  # else _generic: may fail
+  # else _generic: may fail unless URI_COMPAT
   #
   if (! $self) {
     try {
       my $subclass = sprintf('%s::%s', $class, '_generic');
       use_module($subclass);
       $self = $subclass->new($input);
-    } catch {
-      warn $_;
-      return;
     }
   }
   #
