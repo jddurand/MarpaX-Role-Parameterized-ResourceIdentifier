@@ -12,6 +12,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
 use MooX::Role::Parameterized;
@@ -50,9 +51,8 @@ use Scalar::Util qw/blessed/;
 
 has _struct_generic => ( is => 'rw',  isa => Object);
 
+our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $singleton = MarpaX::Role::Parameterized::ResourceIdentifier::Singleton->instance;
-our $URI_COMPAT  = $ENV{'MarpaX::ResourceIdentifier::URI_COMPAT'};
-our $WITH_LOGGER = $ENV{'MarpaX::ResourceIdentifier::WITH_LOGGER'};
 
 role {
   my $params = shift;
@@ -71,7 +71,7 @@ role {
   #
   # Logging
   #
-  if ($WITH_LOGGER) {
+  if ($setup->with_logger) {
     Role::Tiny->apply_roles_to_package($package, qw/MooX::Role::Logger/);
     install_modifier($package, $package->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
     Role::Tiny->apply_roles_to_package(Generic, qw/MooX::Role::Logger/);
@@ -82,46 +82,62 @@ role {
   #
   Role::Tiny->apply_roles_to_package($package, qw/MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common/);
   #
+  # Recognizer option is not configurable: we WILL modify the grammar and inject rules with a notion of rank
+  #
+  my %recognizer_option = (
+                           trace_terminals =>  $setup->marpa_trace_terminals,
+                           trace_values =>  $setup->marpa_trace_values,
+                           ranking_method => 'high_rule_only',
+                           grammar => $singleton->get_start_grammar($package)
+                          );
+  #
   # For performance reason, we have two versions w/o logging
   #
   my $_trigger_input_sub;
-  if ($WITH_LOGGER) {
+  if ($setup->with_logger) {
     $_trigger_input_sub = sub {
       my ($orig, $self, $input) = @_;
-      $self->_logger->debugf('%s: Instanciating recognizer', $package);
-      my $r = Marpa::R2::Scanless::R->new({
-                                           %{$BNF_package->recognizer_option},
-                                           grammar => $singleton->_get_compiled_grammar_per_package($package)
-                                          }
-                                         );
+      {
+        local $\;
+        $self->_logger->debugf('%s: Instanciating recognizer', $package);
+      }
+      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_generic = $self->_struct_generic(Generic->new);
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
-        $self->_logger->tracef('%s: Getting parse tree value', $package);
+        {
+          local $\;
+          $self->_logger->tracef('%s: Getting parse tree value', $package);
+        }
         $r->value($struct_generic);
-        $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
+        {
+          local $\;
+          $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
+        }
       } catch {
-        croak $_ if (! $URI_COMPAT);
+        croak $_ if (! $setup->uri_compat);
       };
+      #
+      # This will do the parsing using the commong BNF
+      #
       $self->$orig($input);
     }
   } else {
     $_trigger_input_sub = sub {
       my ($orig, $self, $input) = @_;
-      my $r = Marpa::R2::Scanless::R->new({
-                                           %{$BNF_package->recognizer_option},
-                                           grammar => $singleton->_get_compiled_grammar_per_package($package)
-                                          }
-                                         );
+      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_generic = $self->_struct_generic(Generic->new);
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
         $r->value($struct_generic);
       } catch {
-        croak $_ if (! $URI_COMPAT);
+        croak $_ if (! $setup->uri_compat);
       };
+      #
+      # This will do the parsing using the commong BNF
+      #
       $self->$orig($input);
     }
   }
