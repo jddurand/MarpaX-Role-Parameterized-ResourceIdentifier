@@ -197,12 +197,16 @@ sub percent_encode {
   my ($class, $string, $regexp) = @_;
 
   my $encoded = $string;
-  $encoded =~ s#($regexp)#
+  $encoded =~ s!$regexp!
     {
-     my $match = $1;
+     #
+     # ${^MATCH} is a read-only variable
+     # and Encode::encode is affecting $match -;
+     #
+     my $match = ${^MATCH};
      join('', map { '%' . uc(unpack('H2', $_)) } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK)))
     }
-    #eg;
+    !egp;
   $encoded
 }
 
