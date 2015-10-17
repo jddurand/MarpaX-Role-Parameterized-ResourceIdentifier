@@ -16,9 +16,9 @@ use Import::Into;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
 use Marpa::R2;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
-use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
 use MooX::Role::Logger;
@@ -27,9 +27,9 @@ use Role::Tiny;
 use Types::Standard -all;
 use Type::Params qw/compile/;
 
-my $action_count           = 0;
-our $singleton             = MarpaX::Role::Parameterized::ResourceIdentifier::Singleton->instance;
-our $setup                 = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
+my $action_count = 0;
+our $grammars    = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
+our $setup       = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 
 role {
   my $params = shift;
@@ -135,7 +135,7 @@ SLIF
     # the different layers.
     #
     my $set_grammar_method_name = "set_${what}_grammar";
-    $singleton->$set_grammar_method_name($package, $grammar);
+    $grammars->$set_grammar_method_name($package, $grammar);
     #
     # And it is exactly for the same reason that $action is unique per package
     # For performance reason, we have two versions w/o logging

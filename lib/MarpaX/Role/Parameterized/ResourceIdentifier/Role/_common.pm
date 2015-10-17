@@ -12,8 +12,8 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
-use MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
 use Moo::Role;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
@@ -31,8 +31,8 @@ has input                 => ( is => 'ro',  isa => Str, required => 1, trigger =
 has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { FALSE } );
 has _struct_common        => ( is => 'rw',  isa => Object);
 
-our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
-our $singleton = MarpaX::Role::Parameterized::ResourceIdentifier::Singleton->instance;
+our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
+our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 
 sub BUILDARGS {
   my ($class, @args) = @_;
@@ -67,7 +67,7 @@ role {
                            trace_terminals =>  $setup->marpa_trace_terminals,
                            trace_values =>  $setup->marpa_trace_values,
                            ranking_method => 'high_rule_only',
-                           grammar => $singleton->get_start_grammar($package)
+                           grammar => $grammars->get_start_grammar($package)
                           );
   #
   # For performance reason, we have two versions w/o logging

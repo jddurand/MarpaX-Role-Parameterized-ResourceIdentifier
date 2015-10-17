@@ -1,4 +1,4 @@
-package MarpaX::Role::Parameterized::ResourceIdentifier::Singleton;
+package MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use Moo;
 with 'MooX::Singleton';
 use MooX::HandlesVia;
