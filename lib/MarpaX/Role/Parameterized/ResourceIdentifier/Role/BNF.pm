@@ -6,6 +6,8 @@ use Moo::Role;
 
 requires 'bnf';
 requires 'start_symbol';
+requires 'pct_encoded';
+requires 'utf8_octets';
 
 1;
 

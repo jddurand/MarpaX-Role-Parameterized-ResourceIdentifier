@@ -16,6 +16,7 @@ use Import::Into;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
 use Marpa::R2;
+use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
@@ -37,41 +38,46 @@ role {
   #
   # Sanity check
   # ------------
-  foreach (qw/BNF_package package encoding pct_encoded/) {
+  foreach (qw/BNF_package package/) {
     croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
   }
 
   my $BNF_package       = $params->{BNF_package};
   my $package           = $params->{package};
-  my $encoding          = $params->{encoding};
-  my $pct_encoded       = $params->{pct_encoded};
 
   use_module($BNF_package);
-
   my $BNF_instance      = $BNF_package->new;
-  my $start_symbol      = $BNF_instance->start_symbol;
-  my $bnf               = $BNF_instance->bnf;
 
-  croak "$BNF_package->bnf must do Str"                                       unless Str->check($bnf);
-  croak "$BNF_package->bnf cannot have 'inaccessible is' (even if commented)" if $bnf =~ /\binaccessible\s+is\b/;
-  croak "$BNF_package->bnf cannot have 'action =>' (even if commented)"       if $bnf =~ /\baction\s+=>/;
+  my %BNF = ();
+  foreach (qw/start_symbol bnf pct_encoded utf8_octets/) {
+    $BNF{$_} = $BNF_instance->$_;
+    if ($_ eq 'pct_encoded') {
+      croak "$BNF_package->$_ must do Str or Undef" unless Str->check($BNF{$_}) || Undef->check($BNF{$_});
+    } elsif ($_ eq 'utf8_octets') {
+      croak "$BNF_package->$_ must do Bool or Undef" unless Bool->check($BNF{$_}) || Undef->check($BNF{$_});
+    } else {
+      croak "$BNF_package->$_ must do Str" unless Str->check($BNF{$_});
+    }
+  }
 
-  $start_symbol      = "<$start_symbol>"      if substr($start_symbol,      0, 1) ne '<';
-  my %start = (
-               start_symbol      => $start_symbol,
-              );
+  croak "$BNF_package->bnf cannot have 'inaccessible is' (even if commented)" if $BNF{bnf} =~ /\binaccessible\s+is\b/;
+  croak "$BNF_package->bnf cannot have 'action =>' (even if commented)"       if $BNF{bnf} =~ /\baction\s+=>/;
+
+  foreach (qw/start_symbol pct_encoded/) {
+    next if Undef->check($BNF{$_});
+    $BNF{$_} = '<' . $BNF{$_} . '>' if substr($BNF{$_}, 0, 1) ne '<';
+  }
+
+  croak 'G1 parameters must exist'                                            if (! exists $params->{G1});
+  croak 'G1 reference type must be HASH'                                      unless does $params->{G1}, 'HASH';
 
   my %G1 = ();
-  if (exists($params->{G1})) {
-    croak 'G1 reference type must be HASH' unless does $params->{G1}, 'HASH';
-    foreach (keys %{$params->{G1}}) {
-      # Every key must start with '<' and the value do CODE
-      croak "G1 $_ must be in the form <...>" unless substr($_, 0, 1) eq '<';
-      croak "G1 $_ value must do CODE" unless does $params->{G1}->{$_}, 'CODE';
-      # It is illegal to have something for the percent encoded rule
-      croak "G1 $_ key cannot be $start_symbol" if ($_ eq $pct_encoded);
-    }
-    %G1 = %{$params->{G1}};
+  foreach (keys %{$params->{G1}}) {
+    # Every key must start with '<' and the value do CODE
+    croak "G1 $_ must be in the form <...>" unless substr($_, 0, 1) eq '<';
+    croak "G1 $_ value must do CODE" unless does $params->{G1}->{$_}, 'CODE';
+    $G1{$_} = $params->{G1}->{$_};
+    croak 'G1 HASH must not contain an entry for $BNF{pct_encoded}'           if Str->check($BNF{pct_encoded}) && $_ eq $BNF{pct_encoded};
   }
   #
   # Good, we can generate code and produce grammar singletons for start
@@ -85,47 +91,32 @@ role {
     local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::BNF_PACKAGE = $BNF_package;
     tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   }
-  foreach (qw/start/) {
-    my $what = $_;
-    my $start   = $start{"${what}_symbol"};
-    my $action  = sprintf('__action%04d', ++$action_count);
-    my $slif;
-    if ($what eq 'start') {
-      #
-      # Main grammar: we just set the start symbol and the general action
-      #
-      $slif = <<SLIF;
+  {
+    my $start_symbol       = $BNF{start_symbol};
+    my $default_action     = sprintf('__action%04d', ++$action_count);
+    my $slif           = <<SLIF;
 inaccessible is ok by default
-:start ::= $start
-:default ::= action => ${package}::$action
-$bnf
+:start ::= $start_symbol
+:default ::= action => ${package}::$default_action
+$BNF{bnf}
 SLIF
-    } else {
-      #
-      # Here we may modify SLIF for other start symbols.
-      #
-    }
-    my $grammar = Marpa::R2::Scanless::G->new({source => \$slif, trace_file_handle => $trace_file_handle});
     #
-    # Inject methods bnf and grammar methods per start symbol.
-    # The deepest is the winner; i.e. specific, or generic, or common.
+    # Compile and save grammar.
     #
-    # install_modifier($package, $package->can("${what}_bnf")     ? 'around' : 'fresh', "${what}_bnf",     sub { $slif    } );
-    # install_modifier($package, $package->can("${what}_grammar") ? 'around' : 'fresh', "${what}_grammar", sub { $grammar } );
-    #
-    # It is the deeper package that will win, but every layer (common, generic, specific) has its own grammar linked to a MooX::Struct.
+    # It is the deepest package that will win, but every layer (common, generic, specific) has its own grammar linked to a MooX::Struct.
     # And we will use this sub-grammar to fill such MooX::Struct. This is why we use a singleton to recover from
     # the different layers.
     #
-    my $set_grammar_method_name = "set_${what}_grammar";
-    $grammars->$set_grammar_method_name($package, $grammar);
+    my $grammar = Marpa::R2::Scanless::G->new({source => \$slif, trace_file_handle => $trace_file_handle});
+    $grammars->set_grammar($package, $grammar);
     #
-    # And it is exactly for the same reason that $action is unique per package
-    # For performance reason, we have two versions w/o logging
+    # Generate default action
     #
-    my $action_sub;
+    my $default_action_sub;
+    my $pct_encoded = Str->check($BNF{pct_encoded}) ? $BNF{pct_encoded} : '';
+    my $utf8_octets = Bool->check($BNF{utf8_octets}) ? $BNF{utf8_octets} : 0;
     if ($setup->with_logger) {
-      $action_sub = sub {
+      $default_action_sub = sub {
         my ($self, @args) = @_;
         my $slg         = $Marpa::R2::Context::slg;
         my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
@@ -135,9 +126,17 @@ SLIF
         #
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
         #
-        # We always propate only the concatenation
+        # We always propagate only the concatenation
         #
-        my $rc = ($lhs eq $pct_encoded) ? chr(hex("$args[1]$args[2]")) : join('', @args);
+        my $rc = join('', @args);
+        if ($lhs eq $pct_encoded) {
+          my $octets = '';
+          while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+          $rc = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets;
+          use Devel::Peek;
+          Dump($octets);
+          Dump($rc);
+        }
         $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
         {
           local $\;
@@ -146,24 +145,50 @@ SLIF
         $rc;
       }
     } else {
-      $action_sub = sub {
-        my ($self, @args) = @_;
-        my $slg         = $Marpa::R2::Context::slg;
-        my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-        #
-        # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
-        # are safe to enforce it here, eventually.
-        #
-        $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-        #
-        # We always propate only the concatenation
-        #
-        my $rc = ($lhs eq $pct_encoded) ? chr(hex("$args[1]$args[2]")) : join('', @args);
-        $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
-        $rc;
+      #
+      # The version without logging is splitted w/o pct_encoded for performance reasons
+      #
+      if (length($pct_encoded)) {
+        if ($utf8_octets) {
+          $default_action_sub = sub {
+            my ($self, @args) = @_;
+            my $slg         = $Marpa::R2::Context::slg;
+            my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+            $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+            my $rc = join('', @args);
+            my $octets = '';
+            while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+            $rc = MarpaX::RFC::RFC3629->new($octets)->output;
+            $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
+            $rc
+          }
+        } else {
+          $default_action_sub = sub {
+            my ($self, @args) = @_;
+            my $slg         = $Marpa::R2::Context::slg;
+            my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+            $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+            my $rc = join('', @args);
+            my $octets = '';
+            while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+            $rc = $octets;
+            $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
+            $rc
+          }
+        }
+      } else {
+        $default_action_sub = sub {
+          my ($self, @args) = @_;
+          my $slg         = $Marpa::R2::Context::slg;
+          my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+          $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+          my $rc = join('', @args);
+          $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
+          $rc
+        }
       }
     }
-    install_modifier($package, 'fresh', $action, $action_sub);
+    install_modifier($package, 'fresh', $default_action, $default_action_sub);
   }
 };
 
@@ -185,28 +210,6 @@ sub percent_encode {
     }
     !egp;
   $encoded
-}
-
-our $UTF8_tail = qr/[\x{80}-\x{BF}]/;
-our $UTF8_1    = qr/[\x{00}-\x{7F}]/;
-our $UTF8_2    = qr/[\x{C2}-\x{DF}]$UTF8_tail/;
-our $UTF8_3    = qr/(?:[\x{E0}][\x{A0}-\x{BF}]$UTF8_tail)|(?:[\x{E1}-\x{EC}]$UTF8_tail$UTF8_tail)|(?:[\x{ED}][\x{80}-\x{9F}]$UTF8_tail)|(?:[\x{EE}-\x{EF}]$UTF8_tail$UTF8_tail)/;
-our $UTF8_4    = qr/(?:[\x{F0}][\x{90}-\x{BF}]$UTF8_tail$UTF8_tail)|(?:[\x{F1}-\x{F3}]$UTF8_tail$UTF8_tail$UTF8_tail)|(?:[\x{F4}][\x{80}-\x{8F}]$UTF8_tail$UTF8_tail)/;
-our $UTF8_char = qr/$UTF8_4|$UTF8_3|$UTF8_2|$UTF8_1/;
-sub percent_decode {
-  my ($class, $string) = @_;
-  #
-  # This is the regexp version of RFC3629, that will leave
-  # every non-decodable thingy as is
-  #
-  my $decoded = $string;
-  $decoded =~ s!$UTF8_char!
-    {
-     my $match = ${^MATCH};
-     decode('UTF-8', $match, Encode::FB_CROAK)
-    }
-    !egp;
-  $decoded
 }
 
 1;

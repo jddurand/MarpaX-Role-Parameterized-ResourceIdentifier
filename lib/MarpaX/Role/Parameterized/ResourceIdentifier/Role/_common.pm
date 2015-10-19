@@ -11,14 +11,12 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
-use Encode qw/decode encode encode_utf8/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use Moo::Role;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
-use Types::Encodings qw/Bytes/;
 use MooX::Struct -rw,
   Common => [
              scheme   => [ isa => Str|Undef, default => sub { undef } ], # Can be undef
@@ -30,7 +28,6 @@ use Scalar::Util qw/blessed/;
 use constant { FALSE => !!0 };
 
 has input                 => ( is => 'ro',  isa => Str, required => 1, trigger => 1);
-has bytes                 => ( is => 'rwp', isa => Bytes, trigger => 1);
 has output                => ( is => 'rwp', isa => Str);
 has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { FALSE } );
 has _struct_common        => ( is => 'rw',  isa => Object);
@@ -50,13 +47,12 @@ role {
   #
   # Sanity check
   # ------------
-  foreach (qw/BNF_package package encoding/) {
+  foreach (qw/BNF_package package/) {
     croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
   }
 
   my $package      = $params->{package};
   my $BNF_package  = $params->{BNF_package};
-  my $encoding     = $params->{encoding};
 
   use_module($BNF_package);
   use_module('MarpaX::Role::Parameterized::ResourceIdentifier')->apply($params, target => $package);
@@ -76,7 +72,7 @@ role {
                            trace_terminals =>  $setup->marpa_trace_terminals,
                            trace_values =>  $setup->marpa_trace_values,
                            ranking_method => 'high_rule_only',
-                           grammar => $grammars->get_start_grammar($package)
+                           grammar => $grammars->get_grammar($package)
                           );
   #
   # For performance reason, we have two versions w/o logging
@@ -91,23 +87,16 @@ role {
       }
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_common = $self->_struct_common(Common->new);
-      #
-      # input is a Perl string (UTF8)
-      #
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
       {
         local $\;
-        $self->_logger->tracef('%s: Getting common parse tree value as bytes', $package);
+        $self->_logger->debugf('%s: Getting common parse tree value', $package);
       }
-      foreach (Common->FIELDS) {
-        my $string = $self->_struct_common->$_;
-        $self->_struct_common->$_(encode_utf8($string));
-      }
-      $self->_set_bytes(encode_utf8(${$r->value($struct_common)}));
+      $self->_set_output(${$r->value($struct_common)});
       {
         local $\;
-        $self->_logger->debugf('%s: Parse common tree value is %s', $package, $struct_common->TO_HASH);
+        $self->_logger->debugf('%s: Common parse tree value is %s, structure is %s', $package, $self->output, $struct_common->TO_HASH);
       }
     }
   } else {
@@ -115,49 +104,14 @@ role {
       my ($self, $input) = @_;
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_common = $self->_struct_common(Common->new);
-      #
-      # input is a Perl string (UTF8)
-      #
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
-      foreach (Common->FIELDS) {
-        my $string = $self->_struct_common->$_;
-        $self->_struct_common->$_(encode_utf8($string));
-      }
-      $self->_set_bytes(encode_utf8(${$r->value($struct_common)}));
+      $self->_set_output(${$r->value($struct_common)});
     }
   }
   method _trigger_input => $_trigger_input_sub;
 
-  my $_trigger_bytes_sub;
-  if ($setup->with_logger) {
-    $_trigger_bytes_sub = sub {
-      my ($self, $input) = @_;
-      {
-        local $\;
-        $self->_logger->tracef('%s: Encoding common output to %s', $package, $encoding);
-      }
-      my $bytes = $self->bytes;
-      $self->_set_output(encode($encoding, $bytes, Encode::FB_CROAK));
-      foreach (Common->FIELDS) {
-        my $bytes = $self->_struct_common->$_;
-        $self->_struct_common->$_(encode($encoding, $bytes, Encode::FB_CROAK));
-      }
-    }
-  } else {
-    $_trigger_bytes_sub = sub {
-      my ($self, $input) = @_;
-      my $bytes = $self->bytes;
-      $self->_set_output(encode($encoding, $bytes, Encode::FB_CROAK));
-      foreach (Common->FIELDS) {
-        my $bytes = $self->_struct_common->$_;
-        $self->_struct_common->$_(encode($encoding, $bytes, Encode::FB_CROAK));
-      }
-    }
-  }
-  method _trigger_bytes => $_trigger_bytes_sub;
-
- foreach (Common->FIELDS) {
+  foreach (Common->FIELDS) {
     my $meth = $_;
     my $can = $package->can($meth);
     my $code = sub {
