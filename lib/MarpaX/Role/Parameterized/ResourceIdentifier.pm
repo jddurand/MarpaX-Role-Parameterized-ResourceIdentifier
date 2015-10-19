@@ -37,18 +37,19 @@ role {
   #
   # Sanity check
   # ------------
-  foreach (qw/BNF_package package/) {
+  foreach (qw/BNF_package package encoding pct_encoded/) {
     croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
   }
 
   my $BNF_package       = $params->{BNF_package};
   my $package           = $params->{package};
+  my $encoding          = $params->{encoding};
+  my $pct_encoded       = $params->{pct_encoded};
 
   use_module($BNF_package);
 
   my $BNF_instance      = $BNF_package->new;
   my $start_symbol      = $BNF_instance->start_symbol;
-  my $gen_delims_symbol = $BNF_instance->gen_delims_symbol;
   my $bnf               = $BNF_instance->bnf;
 
   croak "$BNF_package->bnf must do Str"                                       unless Str->check($bnf);
@@ -56,10 +57,8 @@ role {
   croak "$BNF_package->bnf cannot have 'action =>' (even if commented)"       if $bnf =~ /\baction\s+=>/;
 
   $start_symbol      = "<$start_symbol>"      if substr($start_symbol,      0, 1) ne '<';
-  $gen_delims_symbol = "<$gen_delims_symbol>" if substr($gen_delims_symbol, 0, 1) ne '<';
   my %start = (
                start_symbol      => $start_symbol,
-               gen_delims_symbol => $gen_delims_symbol
               );
 
   my %G1 = ();
@@ -69,15 +68,14 @@ role {
       # Every key must start with '<' and the value do CODE
       croak "G1 $_ must be in the form <...>" unless substr($_, 0, 1) eq '<';
       croak "G1 $_ value must do CODE" unless does $params->{G1}->{$_}, 'CODE';
-      # it is illegal to have a value for gen_delims: we will take it over
-      croak "G1 $_ is not allowed" if ($_ eq $gen_delims_symbol);
+      # It is illegal to have something for the percent encoded rule
+      croak "G1 $_ key cannot be $start_symbol" if ($_ eq $pct_encoded);
     }
     %G1 = %{$params->{G1}};
-    $G1{$gen_delims_symbol} = \&_percent_encode;
   }
   #
-  # Good, we can generate code and produce grammar singletons for start and gen_delims
-  # ----------------------------------------------------------------------------------
+  # Good, we can generate code and produce grammar singletons for start
+  # -------------------------------------------------------------------
   #
   # In any case, we want Marpa to be "silent", unless explicitely traced
   #
@@ -87,7 +85,7 @@ role {
     local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::BNF_PACKAGE = $BNF_package;
     tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   }
-  foreach (qw/start gen_delims/) {
+  foreach (qw/start/) {
     my $what = $_;
     my $start   = $start{"${what}_symbol"};
     my $action  = sprintf('__action%04d', ++$action_count);
@@ -104,31 +102,16 @@ $bnf
 SLIF
     } else {
       #
-      # Delimiters grammar: we inject a rule in the grammar to catch everything, giving priority to gen_delims
-      # that will have a specific action.
-      # Anything not a delimiter will pass through.
+      # Here we may modify SLIF for other start symbols.
       #
-      $slif = <<SLIF;
-inaccessible is ok by default
-:start ::= <gen delims generated>
-:default ::= action => ${package}::$action
-$bnf
-
-<gen delims generated>      ::= <gen delims generated unit>*
-
-<gen delims generated unit> ::= $gen_delims_symbol             rank => 1
-                             | <anything else generated>
-
-<anything else generated>  ::= [\\s\\S]
-SLIF
     }
     my $grammar = Marpa::R2::Scanless::G->new({source => \$slif, trace_file_handle => $trace_file_handle});
     #
     # Inject methods bnf and grammar methods per start symbol.
     # The deepest is the winner; i.e. specific, or generic, or common.
     #
-    install_modifier($package, $package->can("${what}_bnf")     ? 'around' : 'fresh', "${what}_bnf",     sub { $slif    } );
-    install_modifier($package, $package->can("${what}_grammar") ? 'around' : 'fresh', "${what}_grammar", sub { $grammar } );
+    # install_modifier($package, $package->can("${what}_bnf")     ? 'around' : 'fresh', "${what}_bnf",     sub { $slif    } );
+    # install_modifier($package, $package->can("${what}_grammar") ? 'around' : 'fresh', "${what}_grammar", sub { $grammar } );
     #
     # It is the deeper package that will win, but every layer (common, generic, specific) has its own grammar linked to a MooX::Struct.
     # And we will use this sub-grammar to fill such MooX::Struct. This is why we use a singleton to recover from
@@ -144,13 +127,6 @@ SLIF
     if ($setup->with_logger) {
       $action_sub = sub {
         my ($self, @args) = @_;
-        #
-        # We always propate only the concatenation
-        #
-        my $rc = join('', @args);
-        #
-        # Specific sub-actions
-        #
         my $slg         = $Marpa::R2::Context::slg;
         my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
         #
@@ -158,6 +134,10 @@ SLIF
         # are safe to enforce it here, eventually.
         #
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+        #
+        # We always propate only the concatenation
+        #
+        my $rc = ($lhs eq $pct_encoded) ? chr(hex("$args[1]$args[2]")) : join('', @args);
         $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
         {
           local $\;
@@ -168,13 +148,6 @@ SLIF
     } else {
       $action_sub = sub {
         my ($self, @args) = @_;
-        #
-        # We always propate only the concatenation
-        #
-        my $rc = join('', @args);
-        #
-        # Specific sub-actions
-        #
         my $slg         = $Marpa::R2::Context::slg;
         my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
         #
@@ -182,6 +155,10 @@ SLIF
         # are safe to enforce it here, eventually.
         #
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+        #
+        # We always propate only the concatenation
+        #
+        my $rc = ($lhs eq $pct_encoded) ? chr(hex("$args[1]$args[2]")) : join('', @args);
         $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
         $rc;
       }
@@ -210,10 +187,26 @@ sub percent_encode {
   $encoded
 }
 
+our $UTF8_tail = qr/[\x{80}-\x{BF}]/;
+our $UTF8_1    = qr/[\x{00}-\x{7F}]/;
+our $UTF8_2    = qr/[\x{C2}-\x{DF}]$UTF8_tail/;
+our $UTF8_3    = qr/(?:[\x{E0}][\x{A0}-\x{BF}]$UTF8_tail)|(?:[\x{E1}-\x{EC}]$UTF8_tail$UTF8_tail)|(?:[\x{ED}][\x{80}-\x{9F}]$UTF8_tail)|(?:[\x{EE}-\x{EF}]$UTF8_tail$UTF8_tail)/;
+our $UTF8_4    = qr/(?:[\x{F0}][\x{90}-\x{BF}]$UTF8_tail$UTF8_tail)|(?:[\x{F1}-\x{F3}]$UTF8_tail$UTF8_tail$UTF8_tail)|(?:[\x{F4}][\x{80}-\x{8F}]$UTF8_tail$UTF8_tail)/;
+our $UTF8_char = qr/$UTF8_4|$UTF8_3|$UTF8_2|$UTF8_1/;
 sub percent_decode {
-  my ($class, $code) = @_;
-
-  chr(hex($code))
+  my ($class, $string) = @_;
+  #
+  # This is the regexp version of RFC3629, that will leave
+  # every non-decodable thingy as is
+  #
+  my $decoded = $string;
+  $decoded =~ s!$UTF8_char!
+    {
+     my $match = ${^MATCH};
+     decode('UTF-8', $match, Encode::FB_CROAK)
+    }
+    !egp;
+  $decoded
 }
 
 1;

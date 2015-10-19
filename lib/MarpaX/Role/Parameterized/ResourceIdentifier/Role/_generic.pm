@@ -11,6 +11,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic;
 
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
+use Encode qw/decode encode encode_utf8/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
@@ -39,6 +40,8 @@ use MooX::Struct -rw,
               host            => [ isa => Str|Undef,     default => sub { undef } ],
               port            => [ isa => Str|Undef,     default => sub { undef } ],
               ip_literal      => [ isa => Str|Undef,     default => sub { undef } ],
+              ipv4_address    => [ isa => Str|Undef,     default => sub { undef } ],
+              reg_name        => [ isa => Str|Undef,     default => sub { undef } ],
               ipv6_address    => [ isa => Str|Undef,     default => sub { undef } ],
               ipv6_addrz      => [ isa => Str|Undef,     default => sub { undef } ],
               ipvfuture       => [ isa => Str|Undef,     default => sub { undef } ],
@@ -49,7 +52,8 @@ use MooX::Struct -rw,
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
 
-has _struct_generic => ( is => 'rw',  isa => Object);
+has _struct_generic => ( is => 'rw', isa => Object);
+has regnameconvert => ( is => 'ro', isa => Bool, default => sub { 0 } );
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
@@ -57,11 +61,16 @@ our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance
 role {
   my $params = shift;
 
-  croak "package     must exist and do Str" unless exists($params->{package}) && Str->check($params->{package});
-  croak "BNF_package must exist and do Str" unless exists($params->{BNF_package}) && Str->check($params->{BNF_package});
+  #
+  # Sanity check
+  # ------------
+  foreach (qw/BNF_package package encoding/) {
+    croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
+  }
 
   my $package      = $params->{package};
   my $BNF_package  = $params->{BNF_package};
+  my $encoding     = $params->{encoding};
 
   use_module($BNF_package);
   #
@@ -99,27 +108,46 @@ role {
       my ($orig, $self, $input) = @_;
       {
         local $\;
-        $self->_logger->debugf('%s: Instanciating recognizer', $package);
+        $self->_logger->debugf('%s: Instanciating generic recognizer', $package);
       }
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_generic = $self->_struct_generic(Generic->new);
       try {
+        #
+        # input is a perl string (UTF8)
+        #
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
         {
           local $\;
-          $self->_logger->tracef('%s: Getting parse tree value', $package);
+          $self->_logger->tracef('%s: Getting generic parse tree value as bytes', $package);
         }
-        $r->value($struct_generic);
+        foreach (Generic->FIELDS) {
+          if ($_ eq 'segments' || $_ eq 'fragments') {
+            my $array = [ map { encode_utf8($_) } @{$self->_struct_generic->$_} ];
+            $self->_struct_generic->$_(\map { encode_utf8($_) } @{$self->_struct_generic->$_});
+          } else {
+            my $string = $self->_struct_generic->$_;
+            $self->_struct_generic->$_(encode_utf8($string));
+          }
+        }
+        $self->_set_bytes(${$r->value($struct_generic)});
         {
           local $\;
-          $self->_logger->debugf('%s: Parse tree value is %s', $package, $struct_generic->TO_HASH);
+          $self->_logger->debugf('%s: Generic parse tree value is %s', $package, $struct_generic->TO_HASH);
         }
       } catch {
-        croak $_ if (! $setup->uri_compat);
+        #
+        # URI compatibility, it is supposed to match the generic syntax
+        #
+        $self->_logger->debugf('%s: Generic parsing failure', $package);
+        foreach (split(/\n/, $_)) {
+          $self->_logger->tracef('%s: %s', $package, $_);
+        }
+        return
       };
       #
-      # This will do the parsing using the commong BNF
+      # This will do the parsing using the common BNF
       #
       $self->$orig($input);
     }
@@ -129,16 +157,64 @@ role {
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_generic = $self->_struct_generic(Generic->new);
       try {
+        #
+        # input is a perl string (UTF8)
+        #
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
-        $r->value($struct_generic);
-      } catch {
-        croak $_ if (! $setup->uri_compat);
+        foreach (Generic->FIELDS) {
+          if ($_ eq 'segments' || $_ eq 'fragments') {
+            my $array = [ map { encode_utf8($_) } @{$self->_struct_generic->$_} ];
+            $self->_struct_generic->$_(\map { encode_utf8($_) } @{$self->_struct_generic->$_});
+          } else {
+            my $string = $self->_struct_generic->$_;
+            $self->_struct_generic->$_(encode_utf8($string));
+          }
+        }
+        $self->_set_bytes(encode_utf8(${$r->value($struct_generic)}));
       };
       #
-      # This will do the parsing using the commong BNF
+      # This will do the parsing using the common BNF
       #
       $self->$orig($input);
+    }
+  }
+  install_modifier($package, 'around', '_trigger_input', $_trigger_input_sub);
+
+  my $_trigger_bytes_sub;
+  if ($setup->with_logger) {
+    $_trigger_bytes_sub = sub {
+      my ($self, $input) = @_;
+      {
+        local $\;
+        $self->_logger->tracef('%s: Encoding generic output to %s', $package, $encoding);
+      }
+      my $bytes = $self->bytes;
+      $self->_set_output(encode($encoding, $bytes, Encode::FB_CROAK));
+      foreach (Generic->FIELDS) {
+        if ($_ eq 'segments' || $_ eq 'fragments') {
+          my $array = [ map { encode($encoding, $_, Encode::FB_CROAK) } @{$self->_struct_generic->$_} ];
+          $self->_struct_generic->$_(\map { encode_utf8($_) } @{$self->_struct_generic->$_});
+        } else {
+          my $bytes = $self->_struct_generic->$_;
+          $self->_struct_generic->$_(encode($encoding, $bytes, Encode::FB_CROAK));
+        }
+      }
+    }
+  } else {
+    $_trigger_bytes_sub = sub {
+      my ($self, $input) = @_;
+      my $bytes = $self->bytes;
+      $self->_set_output(encode($encoding, $bytes, Encode::FB_CROAK));
+      foreach (Generic->FIELDS) {
+        if ($_ eq 'segments' || $_ eq 'fragments') {
+          my $array = [ map { encode($encoding, $_, Encode::FB_CROAK) } @{$self->_struct_generic->$_} ];
+          $self->_struct_generic->$_(\map { encode_utf8($_) } @{$self->_struct_generic->$_});
+        } else {
+          my $bytes = $self->_struct_generic->$_;
+          $self->_struct_generic->$_(encode($encoding, $bytes, Encode::FB_CROAK));
+        }
+      }
     }
   }
   install_modifier($package, 'around', '_trigger_input', $_trigger_input_sub);
@@ -159,12 +235,5 @@ role {
                     );
   }
 };
-
-#
-# Make sure all fields of the structure are wrapped
-#
-foreach (Generic->FIELDS) {
-  eval "requires '$_'";
-}
 
 1;

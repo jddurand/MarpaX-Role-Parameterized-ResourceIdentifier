@@ -133,7 +133,7 @@ sub new {
     $self = $class->_new_from_specific(${^MATCH}, $input);
   }
   #
-  # else _generic: may fail unless URI_COMPAT
+  # else _generic: may fail but try/catch'ed
   #
   $self = $class->_new_from_generic($input) if (! $self);
   #

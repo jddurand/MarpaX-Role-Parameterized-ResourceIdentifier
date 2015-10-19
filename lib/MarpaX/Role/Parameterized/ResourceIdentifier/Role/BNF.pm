@@ -6,7 +6,6 @@ use Moo::Role;
 
 requires 'bnf';
 requires 'start_symbol';
-requires 'gen_delims_symbol';
 
 1;
 
