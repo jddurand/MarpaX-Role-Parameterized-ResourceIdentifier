@@ -21,11 +21,12 @@ use Try::Tiny;
 use MooX::Struct -rw,
   Generic => [
               iri             => [ isa => Str|Undef,     default => sub { undef } ],
+              opaque          => [ isa => Str,           default => sub {    '' } ],
               scheme          => [ isa => Str|Undef,     default => sub { undef } ],
               hier_part       => [ isa => Str|Undef,     default => sub { undef } ],
               query           => [ isa => Str|Undef,     default => sub { undef } ],
-              ifragment       => [ isa => Str|Undef,     default => sub { undef } ],
-              isegment        => [ isa => Str|Undef,     default => sub { undef } ],
+              fragment        => [ isa => Str|Undef,     default => sub { undef } ],
+              segment         => [ isa => Str|Undef,     default => sub { undef } ],
               authority       => [ isa => Str|Undef,     default => sub { undef } ],
               path            => [ isa => Str|Undef,     default => sub { undef } ],
               path_abempty    => [ isa => Str|Undef,     default => sub { undef } ],
@@ -130,31 +131,25 @@ role {
         foreach (split(/\n/, $_)) {
           $self->_logger->tracef('%s: %s', $package, $_);
         }
+        #
+        # This will do the parsing using the common BNF
+        #
+        $self->$orig($input);
         return
       };
-      #
-      # This will do the parsing using the common BNF
-      #
-      $self->$orig($input);
     }
   } else {
     $_trigger_input_sub = sub {
       my ($orig, $self, $input) = @_;
-      {
-        local $\;
-        $self->_logger->debugf('%s: Instanciating generic recognizer', $package);
-      }
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       my $struct_generic = $self->_struct_generic(Generic->new);
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
         $self->_set_output(${$r->value($struct_generic)});
+      } catch {
+        $self->$orig($input);
       };
-      #
-      # This will do the parsing using the common BNF
-      #
-      $self->$orig($input);
     }
   }
   install_modifier($package, 'around', '_trigger_input', $_trigger_input_sub);
@@ -163,9 +158,9 @@ role {
     my $meth = $_;
     my $can = $package->can($meth);
     my $code = sub {
-      my ($self, @args) = @_;
+      my $self = shift;
       my $rc = $self->_struct_generic->$meth;
-      $self->_struct_generic->$meth(@_);
+      $self->_struct_generic->$meth(@_) if (@_);
       $rc
     };
     install_modifier($package,
@@ -174,6 +169,9 @@ role {
                      $can ? sub { shift; goto &$code } : $code
                     );
   }
+
+  install_modifier($package, 'around', 'is_relative', sub { shift; Str->check(shift->_struct_generic->relative_ref) });
+  install_modifier($package, 'around', 'is_absolute', sub { shift; Str->check(shift->_struct_generic->iri) });
 };
 
 1;

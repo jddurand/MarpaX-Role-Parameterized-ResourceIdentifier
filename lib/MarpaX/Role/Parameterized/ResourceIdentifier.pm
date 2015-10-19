@@ -133,9 +133,6 @@ SLIF
           my $octets = '';
           while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
           $rc = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets;
-          use Devel::Peek;
-          Dump($octets);
-          Dump($rc);
         }
         $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
         {

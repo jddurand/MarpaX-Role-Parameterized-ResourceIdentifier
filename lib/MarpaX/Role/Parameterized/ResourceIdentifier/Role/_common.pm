@@ -115,9 +115,9 @@ role {
     my $meth = $_;
     my $can = $package->can($meth);
     my $code = sub {
-      my ($self, @args) = @_;
+      my $self = shift;
       my $rc = $self->_struct_common->$meth;
-      $self->_struct_common->$meth(@args);
+      $self->_struct_common->$meth(@_) if (@_);
       $rc
     };
     install_modifier($package, 'fresh', $meth, $code);
