@@ -153,9 +153,11 @@ SLIF
             my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
             $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
             my $rc = join('', @args);
-            my $octets = '';
-            while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
-            $rc = MarpaX::RFC::RFC3629->new($octets)->output;
+            if ($lhs eq $pct_encoded) {
+              my $octets = '';
+              while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+              $rc = MarpaX::RFC::RFC3629->new($octets)->output;
+            }
             $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
             $rc
           }
@@ -166,9 +168,11 @@ SLIF
             my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
             $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
             my $rc = join('', @args);
-            my $octets = '';
-            while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
-            $rc = $octets;
+            if ($lhs eq $pct_encoded) {
+              my $octets = '';
+              while ($rc =~ m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+              $rc = $octets;
+            }
             $G1{$lhs}->($self, $rc) if exists $G1{$lhs};
             $rc
           }

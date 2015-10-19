@@ -148,7 +148,11 @@ role {
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
         $self->_set_output(${$r->value($struct_generic)});
       } catch {
+        #
+        # URI compatibility, it is supposed to match the generic syntax
+        #
         $self->$orig($input);
+        return
       };
     }
   }
