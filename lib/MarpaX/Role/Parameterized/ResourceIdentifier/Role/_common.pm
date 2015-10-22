@@ -20,11 +20,11 @@ use Types::Standard -all;
 #
 # Base structure
 #
-use MooX::Struct -rw,
+use MooX::Struct
   Common => [
-             scheme   => [ isa => Str|Undef, default => sub { undef } ], # Can be undef
-             opaque   => [ isa => Str      , default => sub {    '' } ], # Always set
-             fragment => [ isa => Str|Undef, default => sub { undef } ]  # Can be undef
+             scheme   => [ is => 'rw', isa => Str|Undef, default => sub { undef } ], # Can be undef
+             opaque   => [ is => 'rw', isa => Str      , default => sub {    '' } ], # Always set
+             fragment => [ is => 'rw', isa => Str|Undef, default => sub { undef } ]  # Can be undef
             ];
 
 use Role::Tiny;
