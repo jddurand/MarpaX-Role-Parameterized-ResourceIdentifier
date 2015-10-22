@@ -46,8 +46,8 @@ use MooX::Struct -rw,
               ipv6_addrz      => [ isa => Str|Undef,     default => sub { undef } ],
               ipvfuture       => [ isa => Str|Undef,     default => sub { undef } ],
               zoneid          => [ isa => Str|Undef,     default => sub { undef } ],
-              segments        => [ isa => ArrayRef[Str], default => sub { [] } ],
-              fragments       => [ isa => ArrayRef[Str], default => sub { [] } ],
+              segments        => [ isa => ArrayRef[Str], default => sub {  [''] } ],  # URI default
+              fragments       => [ isa => ArrayRef[Str], default => sub {    [] } ],
              ];
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
