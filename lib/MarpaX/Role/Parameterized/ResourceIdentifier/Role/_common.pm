@@ -124,6 +124,8 @@ role {
     # name must begin with a letter and must consist of only US-ASCII letters, numbers, and a few special marks: ".", "+", "-".  This restriction effectively
     # means that the scheme must be passed unescaped.  Passing an undefined argument to the scheme method makes the URI relative (if possible).
     #
+    my $rc = $self->_structs_common->[0]->scheme;  # Indice [0] and [1] will return the same thing as per scheme definition
+    $rc = lc($rc) if (Str->check($rc));
     
     # Letter case does not matter for scheme names.  The string returned by $uri->scheme is always lowercase.  If you want the scheme just as it was written in
     # the URI in its original case, you can use the $uri->_scheme method instead.};

@@ -47,7 +47,6 @@ use MooX::Struct
               ipvfuture       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
               zoneid          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
               segments        => [ is => 'rwp', isa => ArrayRef[Str], default => sub {  [''] } ],
-              fragments       => [ is => 'rwp', isa => ArrayRef[Str], default => sub {    [] } ],
              ];
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
