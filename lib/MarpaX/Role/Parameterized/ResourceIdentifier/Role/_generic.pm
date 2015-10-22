@@ -52,8 +52,11 @@ use MooX::Struct -rw,
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
 
-has _struct_generic => ( is => 'rw', isa => Object);
-has regnameconvert => ( is => 'ro', isa => Bool, default => sub { 0 } );
+#
+# Indice 0: escaped value, indice 1: unescaped value
+#
+has _structs_generic => ( is => 'rw', isa => ArrayRef[Object]);
+has regnameconvert   => ( is => 'rw', isa => Bool, default => sub { 0 } );
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
@@ -110,7 +113,6 @@ role {
         $self->_logger->debugf('%s: Instanciating generic recognizer', $package);
       }
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-      my $struct_generic = $self->_struct_generic(Generic->new);
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
@@ -118,10 +120,11 @@ role {
           local $\;
           $self->_logger->debugf('%s: Getting generic parse tree value', $package);
         }
-        $self->_set_output(${$r->value($struct_generic)});
+        $self->_structs_generic(${$r->value([ Generic->new, Generic->new ])});
         {
           local $\;
-          $self->_logger->debugf('%s: Generic parse tree value is %s, structure is %s', $package, $self->output, $struct_generic->TO_HASH);
+          $self->_logger->debugf('%s: Escaped parse tree value is %s', $package, $self->_structs_generic->[0]->TO_HASH);
+          $self->_logger->debugf('%s: Unescaped parse tree value is %s', $package, $self->_structs_generic->[1]->TO_HASH);
         }
       } catch {
         #
@@ -142,11 +145,10 @@ role {
     $_trigger_input_sub = sub {
       my ($orig, $self, $input) = @_;
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-      my $struct_generic = $self->_struct_generic(Generic->new);
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
-        $self->_set_output(${$r->value($struct_generic)});
+        $self->_structs_generic(${$r->value([ Generic->new, Generic->new ])});
       } catch {
         $self->$orig($input);
       };

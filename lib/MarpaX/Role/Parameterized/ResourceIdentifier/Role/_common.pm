@@ -17,20 +17,26 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use Moo::Role;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
+#
+# Base structure
+#
 use MooX::Struct -rw,
   Common => [
              scheme   => [ isa => Str|Undef, default => sub { undef } ], # Can be undef
              opaque   => [ isa => Str      , default => sub {    '' } ], # Always set
              fragment => [ isa => Str|Undef, default => sub { undef } ]  # Can be undef
             ];
+
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
 use constant { FALSE => !!0 };
 
 has input                 => ( is => 'ro',  isa => Str, required => 1, trigger => 1);
-has output                => ( is => 'rwp', isa => Str);
 has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { FALSE } );
-has _struct_common        => ( is => 'rw',  isa => Object);
+#
+# Indice 0: escaped value, indice 1: unescaped value
+#
+has _structs_common       => ( is => 'rw',  isa => ArrayRef[Object]);
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
@@ -86,27 +92,26 @@ role {
         $self->_logger->tracef('%s: Instanciating common recognizer', $package);
       }
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-      my $struct_common = $self->_struct_common(Common->new);
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
       {
         local $\;
         $self->_logger->debugf('%s: Getting common parse tree value', $package);
       }
-      $self->_set_output(${$r->value($struct_common)});
+      $self->_structs_common(${$r->value([ Common->new, Common->new ])});
       {
         local $\;
-        $self->_logger->debugf('%s: Common parse tree value is %s, structure is %s', $package, $self->output, $struct_common->TO_HASH);
+        $self->_logger->debugf('%s: Escaped parse tree value is %s', $package, $self->_structs_common->[0]->TO_HASH);
+        $self->_logger->debugf('%s: Unescaped parse tree value is %s', $package, $self->_structs_common->[1]->TO_HASH);
       }
     }
   } else {
     $_trigger_input_sub = sub {
       my ($self, $input) = @_;
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-      my $struct_common = $self->_struct_common(Common->new);
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
-      $self->_set_output(${$r->value($struct_common)});
+      $self->_structs_common(${$r->value([ Common->new, Common->new ])});
     }
   }
   method _trigger_input => $_trigger_input_sub;

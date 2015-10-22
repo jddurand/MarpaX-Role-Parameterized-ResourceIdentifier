@@ -8,6 +8,7 @@ requires 'bnf';
 requires 'start_symbol';
 requires 'pct_encoded';
 requires 'utf8_octets';
+requires 'reserved';
+requires 'unreserved';
 
 1;
-
