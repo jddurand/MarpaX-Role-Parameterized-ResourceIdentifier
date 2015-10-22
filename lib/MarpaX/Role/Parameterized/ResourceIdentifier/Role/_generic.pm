@@ -20,34 +20,34 @@ use Types::Standard -all;
 use Try::Tiny;
 use MooX::Struct
   Generic => [
-              iri             => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              opaque          => [ is => 'rw', isa => Str,           default => sub {    '' } ],
-              scheme          => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              hier_part       => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              query           => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              fragment        => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              segment         => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              authority       => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              path            => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              path_abempty    => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              path_absolute   => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              path_noscheme   => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              path_rootless   => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              path_empty      => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              relative_ref    => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              relative_part   => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              userinfo        => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              host            => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              port            => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              ip_literal      => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              ipv4_address    => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              reg_name        => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              ipv6_address    => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              ipv6_addrz      => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              ipvfuture       => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              zoneid          => [ is => 'rw', isa => Str|Undef,     default => sub { undef } ],
-              segments        => [ is => 'rw', isa => ArrayRef[Str], default => sub {  [''] } ],  # URI default
-              fragments       => [ is => 'rw', isa => ArrayRef[Str], default => sub {    [] } ],
+              iri             => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              opaque          => [ is => 'rwp', isa => Str,           default => sub {    '' } ],
+              scheme          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              hier_part       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              query           => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              fragment        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              segment         => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              authority       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              path            => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              path_abempty    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              path_absolute   => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              path_noscheme   => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              path_rootless   => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              path_empty      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              relative_ref    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              relative_part   => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              userinfo        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              host            => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              port            => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              ip_literal      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              ipv4_address    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              reg_name        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              ipv6_address    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              ipv6_addrz      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              ipvfuture       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              zoneid          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              segments        => [ is => 'rwp', isa => ArrayRef[Str], default => sub {  [''] } ],
+              fragments       => [ is => 'rwp', isa => ArrayRef[Str], default => sub {    [] } ],
              ];
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
@@ -55,7 +55,7 @@ use Scalar::Util qw/blessed/;
 #
 # Indice 0: escaped value, indice 1: unescaped value
 #
-has _structs_generic => ( is => 'rw', isa => ArrayRef[Object]);
+has _structs_generic => ( is => 'rw', isa => ArrayRef[Object]);             # Indice 0: escaped, Indice 1: unescaped
 has regnameconvert   => ( is => 'rw', isa => Bool, default => sub { 0 } );
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
@@ -159,19 +159,18 @@ role {
     }
   }
   install_modifier($package, 'around', '_trigger_input', $_trigger_input_sub);
-
+  #
+  # Every internal field is accessible using _xxx, and eventually a boolean saying
+  # if the output should be the escaped version, or the unescaped one.
+  # Default indice is 0, i.e. it is returns the escaped string.
+  #
   foreach (Generic->FIELDS) {
-    my $meth = $_;
-    my $can = $package->can($meth);
-    my $code = sub {
-      my $self = shift;
-      my $rc = $self->_struct_generic->$meth;
-      $self->_struct_generic->$meth(@_) if (@_);
-      $rc
-    };
+    my $field = $_;
+    my $can = $package->can("_$field");
+    my $code = sub { shift->_structs_generic->[(shift) ? 1 : 0]->$field };
     install_modifier($package,
                      $can ? 'around' : 'fresh',
-                     $meth,
+                     "_$field",
                      $can ? sub { shift; goto &$code } : $code
                     );
   }

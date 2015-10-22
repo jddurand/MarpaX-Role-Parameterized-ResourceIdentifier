@@ -22,9 +22,9 @@ use Types::Standard -all;
 #
 use MooX::Struct
   Common => [
-             scheme   => [ is => 'rw', isa => Str|Undef, default => sub { undef } ], # Can be undef
-             opaque   => [ is => 'rw', isa => Str      , default => sub {    '' } ], # Always set
-             fragment => [ is => 'rw', isa => Str|Undef, default => sub { undef } ]  # Can be undef
+             scheme   => [ is => 'rwp', isa => Str|Undef, default => sub { undef } ], # Can be undef
+             opaque   => [ is => 'rwp', isa => Str      , default => sub {    '' } ], # Always set
+             fragment => [ is => 'rwp', isa => Str|Undef, default => sub { undef } ]  # Can be undef
             ];
 
 use Role::Tiny;
@@ -116,21 +116,30 @@ role {
   }
   method _trigger_input => $_trigger_input_sub;
 
+  method TODOscheme => sub {
+    my $self = shift;
+    #
+    # Sets and returns the scheme part of the $uri.  If the $uri is relative, then $uri->scheme returns "undef".  If called with an argument, it updates the
+    # scheme of $uri, possibly changing the class of $uri, and returns the old scheme value.  The method croaks if the new scheme name is illegal; a scheme
+    # name must begin with a letter and must consist of only US-ASCII letters, numbers, and a few special marks: ".", "+", "-".  This restriction effectively
+    # means that the scheme must be passed unescaped.  Passing an undefined argument to the scheme method makes the URI relative (if possible).
+    #
+    
+    # Letter case does not matter for scheme names.  The string returned by $uri->scheme is always lowercase.  If you want the scheme just as it was written in
+    # the URI in its original case, you can use the $uri->_scheme method instead.};
+    #
+  };
+  #
+  # Every internal field is accessible using _xxx, and eventually a boolean saying
+  # if the output should be the escaped version, or the unescaped one.
+  # Default indice is 0, i.e. it is returns the escaped string.
+  #
   foreach (Common->FIELDS) {
-    my $meth = $_;
-    my $can = $package->can($meth);
-    my $code = sub {
-      my $self = shift;
-      my $rc = $self->_struct_common->$meth;
-      $self->_struct_common->$meth(@_) if (@_);
-      $rc
-    };
-    install_modifier($package, 'fresh', $meth, $code);
+    my $field = $_;
+    method "_$field" => sub { shift->_structs_generic->[(shift) ? 1 : 0]->$field };
   }
-
-  install_modifier($package, 'fresh', 'is_relative', sub { FALSE });
-  install_modifier($package, 'fresh', 'is_absolute', sub { FALSE });
-
+  method is_relative => sub { FALSE };
+  method is_absolute => sub { FALSE };
 };
 
 1;
