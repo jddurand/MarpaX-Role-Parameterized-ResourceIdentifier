@@ -14,6 +14,7 @@ use Class::Method::Modifiers qw/install_modifier/;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top;
 use Moo::Role;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
@@ -116,20 +117,91 @@ role {
   }
   method _trigger_input => $_trigger_input_sub;
 
-  method TODOscheme => sub {
-    my $self = shift;
+  my $top_package = $package;
+  $top_package =~ s/::_common$//;
+
+  method scheme => sub {
+    my ($self, @args) = @_;
     #
     # Sets and returns the scheme part of the $uri.  If the $uri is relative, then $uri->scheme returns "undef".  If called with an argument, it updates the
     # scheme of $uri, possibly changing the class of $uri, and returns the old scheme value.  The method croaks if the new scheme name is illegal; a scheme
     # name must begin with a letter and must consist of only US-ASCII letters, numbers, and a few special marks: ".", "+", "-".  This restriction effectively
     # means that the scheme must be passed unescaped.  Passing an undefined argument to the scheme method makes the URI relative (if possible).
     #
-    my $rc = $self->_structs_common->[0]->scheme;  # Indice [0] and [1] will return the same thing as per scheme definition
-    $rc = lc($rc) if (Str->check($rc));
-    
+    my $rc = $self->_scheme(undef, 1);  # Indice [0] and [1] will return the same thing as per scheme definition, second argument is normalization
+    #
     # Letter case does not matter for scheme names.  The string returned by $uri->scheme is always lowercase.  If you want the scheme just as it was written in
     # the URI in its original case, you can use the $uri->_scheme method instead.};
     #
+    $rc = lc($rc) if (Str->check($rc));
+    #
+    # Done like this, because the object can be reblessed
+    #
+    $_[0] = $top_package->new($self->_stringify(scheme => $args[0] // '')) if (@args);
+    $rc
+  };
+
+  method _stringify => sub {
+    my ($self, %args) = @_;
+
+    my $uri = '';
+
+    my $scheme   = delete($args{scheme});
+    my $opaque   = delete($args{opaque});
+    my $fragment = delete($args{fragment});
+
+    my @internal_arguments = (delete($args{_unescape}), delete($args{_normalize}));
+
+    $scheme   //= $self->_scheme(@internal_arguments)   // '';
+    $opaque   //= $self->_opaque(@internal_arguments)   // '';
+    $fragment //= $self->_fragment(@internal_arguments) // '';
+
+    $uri .= $scheme . ':'   if (length($scheme));
+    $uri .= $opaque         if (length($opaque));
+    $uri .= '#' . $fragment if (length($fragment));
+
+    $uri
+  };
+  #
+  # Any kind of IRI comparison REQUIRES that all escapings or encodings
+  # in the protocol or format ./.. are resolved. We have done it in the
+  # unescaped indice.
+  #
+  method _eq_simple_string_comparison   => sub { $_[0]->_stringify(_unescape => 1)                  eq $_[1]->_stringify(_unescape => 1)                  };
+  #
+  # Syntax based normalization talks about <pct encoded> that should be
+  # case insensitive.
+  #
+  # => We do not mind because we will use the unescaped version,
+  # in which any <pct encoded> sequence has been converted to a character
+  #
+  # Next it says that IRIs MUST rely on the assumption that IRIs are
+  # appropriately pre-character-normalized rather than apply character
+  # normalization when comparing two IRIs.  The exceptions are conversion
+  # from a non-digital form, and conversion from a non-UCS-based
+  # character encoding to a UCS-based character encoding.
+  #
+  # => We simply do NOT support input that would come from a non-UCS-based character
+  # encoding and indeed rely on the assumption stated above.
+  #
+  method _eq_syntax_based_normalization => sub { $_[0]->_stringify(_unescape => 1, _normalize => 1) eq $_[1]->_stringify(_unescape => 1, _normalize => 1) };
+  method _eq                            => sub { _eq_simple_string_comparison(@_) || _eq_syntax_based_normalization(@_) };
+
+  #
+  # As per perldoc overload, Run-time overloading is only possible like this:
+  #
+  eval 'use overload (
+                      \'""\' => sub { shift->_stringify },
+                      \'==\' => sub {   _eq(@_) },
+                      \'!=\' => sub { ! _eq(@_) }
+                     )';
+  method normalize => sub {
+    my ($self, $field, $value) = @_;
+    if ($field eq 'scheme') {
+      $value = lc($value);
+    }
+
+    $value
   };
   #
   # Every internal field is accessible using _xxx, and eventually a boolean saying
@@ -138,7 +210,12 @@ role {
   #
   foreach (Common->FIELDS) {
     my $field = $_;
-    method "_$field" => sub { shift->_structs_generic->[(shift) ? 1 : 0]->$field };
+    method "_$field" => sub {
+      my ($self, $unescape, $normalize) = @_;
+      my $rc = $self->_structs_common->[$unescape ? 1 : 0]->$field;
+      $rc = $self->normalize($field, $rc) if ($normalize);
+      $rc
+    };
   }
   method is_relative => sub { FALSE };
   method is_absolute => sub { FALSE };

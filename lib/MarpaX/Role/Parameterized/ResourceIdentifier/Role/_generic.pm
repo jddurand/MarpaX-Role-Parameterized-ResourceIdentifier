@@ -166,7 +166,12 @@ role {
   foreach (Generic->FIELDS) {
     my $field = $_;
     my $can = $package->can("_$field");
-    my $code = sub { shift->_structs_generic->[(shift) ? 1 : 0]->$field };
+    my $code = sub {
+      my ($self, $unescape, $normalize) = @_;
+      my $rc = $self->_structs_generic->[$unescape ? 1 : 0]->$field;
+      $rc = $self->normalize($field, $rc) if ($normalize);
+      $rc
+    };
     install_modifier($package,
                      $can ? 'around' : 'fresh',
                      "_$field",
@@ -174,6 +179,16 @@ role {
                     );
   }
 
+  my $normalize_sub = sub {
+    my ($orig, $self, $field, $value) = @_;
+    if ($field eq 'opaque') {
+      print STDERR "TO OVERRIDE: $field normalization\n";
+      $self->$orig($field, $value);
+    } else {
+      $self->$orig($field, $value);
+    }
+  };
+  install_modifier($package, 'around', 'normalize', $normalize_sub);
   install_modifier($package, 'around', 'is_relative', sub { shift; Str->check(shift->_struct_generic->relative_ref) });
   install_modifier($package, 'around', 'is_absolute', sub { shift; Str->check(shift->_struct_generic->iri) });
 };
