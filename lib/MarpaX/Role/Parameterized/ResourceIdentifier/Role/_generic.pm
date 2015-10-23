@@ -20,6 +20,7 @@ use Types::Standard -all;
 use Try::Tiny;
 use MooX::Struct
   Generic => [
+              _output         => [ is => 'rw',  isa => Str,           default => sub {    '' } ], # Parse tree value
               iri             => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
               opaque          => [ is => 'rwp', isa => Str,           default => sub {    '' } ],
               scheme          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
@@ -54,9 +55,9 @@ use Scalar::Util qw/blessed/;
 #
 # Indice 0: escaped value, indice 1: unescaped value
 #
-has _structs_generic => ( is => 'rw', isa => ArrayRef[Object]);              # Indice 0: escaped, Indice 1: unescaped
-has idn              => ( is => 'rw', isa => Bool, default => sub { !!0 } ); # Is reg-name an IDN
-has nfc              => ( is => 'rw', isa => Bool, default => sub { !!1 } ); # Is input normalized
+has _structs => ( is => 'rw', isa => ArrayRef[Object]);              # Indice 0: escaped, Indice 1: unescaped
+has idn      => ( is => 'rw', isa => Bool, default => sub { !!0 } ); # Is reg-name an IDN
+has nfc      => ( is => 'rw', isa => Bool, default => sub { !!1 } ); # Is input normalized
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
@@ -110,7 +111,7 @@ role {
       my ($orig, $self, $input) = @_;
       {
         local $\;
-        $self->_logger->debugf('%s: Instanciating generic recognizer', $package);
+        $self->_logger->tracef('%s: Instanciating generic recognizer', $package);
       }
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       try {
@@ -118,19 +119,30 @@ role {
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
         {
           local $\;
-          $self->_logger->debugf('%s: Getting generic parse tree value', $package);
+          $self->_logger->tracef('%s: Getting generic parse tree value', $package);
         }
-        $self->_structs_generic(${$r->value([ Generic->new, Generic->new ])});
+        $self->_structs(${$r->value([
+                                     Generic->new,          # Escaped
+                                     Generic->new,          # Unescaped
+                                     Generic->new,          # Raw
+                                     Generic->new,          # Normalized escaped
+                                     Generic->new,          # Normalized unescaped
+                                     Generic->new           # Normalized raw
+                                    ])});
         {
           local $\;
-          $self->_logger->debugf('%s: Escaped parse tree value is %s', $package, $self->_structs_generic->[0]->TO_HASH);
-          $self->_logger->debugf('%s: Unescaped parse tree value is %s', $package, $self->_structs_generic->[1]->TO_HASH);
+          $self->_logger->debugf('%s: Escaped parse tree value              is %s', $package, $self->_structs->[$self->_indice_escaped             ]->_output);
+          $self->_logger->debugf('%s: Unescaped parse tree value            is %s', $package, $self->_structs->[$self->_indice_unescaped           ]->_output);
+          $self->_logger->debugf('%s: Raw parse tree value                  is %s', $package, $self->_structs->[$self->_indice_raw                 ]->_output);
+          $self->_logger->debugf('%s: Normalized escaped parse tree value   is %s', $package, $self->_structs->[$self->_indice_normalized_escaped  ]->_output);
+          $self->_logger->debugf('%s: Normalized unescaped parse tree value is %s', $package, $self->_structs->[$self->_indice_normalized_unescaped]->_output);
+          $self->_logger->debugf('%s: Normalized raw parse tree value       is %s', $package, $self->_structs->[$self->_indice_normalized_raw      ]->_output);
         }
       } catch {
         #
         # URI compatibility, it is supposed to match the generic syntax
         #
-        $self->_logger->debugf('%s: Generic parsing failure', $package);
+        $self->_logger->tracef('%s: Generic parsing failure', $package);
         foreach (split(/\n/, $_)) {
           $self->_logger->tracef('%s: %s', $package, $_);
         }
@@ -148,7 +160,14 @@ role {
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
-        $self->_structs_generic(${$r->value([ Generic->new, Generic->new ])});
+        $self->_structs(${$r->value([
+                                     Generic->new,          # Escaped
+                                     Generic->new,          # Unescaped
+                                     Generic->new,          # Raw
+                                     Generic->new,          # Normalized escaped
+                                     Generic->new,          # Normalized unescaped
+                                     Generic->new           # Normalized raw
+                                    ])});
       } catch {
         #
         # URI compatibility, it is supposed to match the generic syntax
@@ -167,12 +186,7 @@ role {
   foreach (Generic->FIELDS) {
     my $field = $_;
     my $can = $package->can("_$field");
-    my $code = sub {
-      my ($self, $unescape, $normalize) = @_;
-      my $rc = $self->_structs_generic->[$unescape ? 1 : 0]->$field;
-      $rc = $self->normalize($field, $rc) if ($normalize);
-      $rc
-    };
+    my $code = sub { my $self = shift; $self->_structs->[$self->_indice(@_)]->$field };
     install_modifier($package,
                      $can ? 'around' : 'fresh',
                      "_$field",

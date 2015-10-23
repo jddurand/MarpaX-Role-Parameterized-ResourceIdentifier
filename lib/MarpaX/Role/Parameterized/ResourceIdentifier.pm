@@ -27,7 +27,15 @@ use MooX::Role::Parameterized;
 use Role::Tiny;
 use Types::Standard -all;
 use Type::Params qw/compile/;
-
+use constant {
+  ESCAPED              => 0,
+  UNESCAPED            => 1,
+  RAW                  => 2,
+  NORMALIZED_ESCAPED   => 3,
+  NORMALIZED_UNESCAPED => 4,
+  NORMALIZED_RAW       => 5,
+  _MAX                 => 6
+};
 my $action_count = 0;
 our $grammars    = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup       = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
@@ -49,7 +57,7 @@ role {
   my $BNF_instance      = $BNF_package->new;
 
   my %BNF = ();
-  foreach (qw/start_symbol bnf pct_encoded utf8_octets reserved unreserved/) {
+  foreach (qw/start_symbol bnf pct_encoded utf8_octets reserved unreserved normalizer/) {
     $BNF{$_} = $BNF_instance->$_;
     if ($_ eq 'pct_encoded') {
       croak "$BNF_package->$_ must do Str or Undef" unless Str->check($BNF{$_}) || Undef->check($BNF{$_});
@@ -57,6 +65,8 @@ role {
       croak "$BNF_package->$_ must do Bool or Undef" unless Bool->check($BNF{$_}) || Undef->check($BNF{$_});
     } elsif (($_ eq 'reserved') || ($_ eq 'unreserved')) {
       croak "$BNF_package->$_ must do RegexpRef or Undef" unless RegexpRef->check($BNF{$_}) || Undef->check($BNF{$_});
+    } elsif ($_ eq 'normalizer') {
+      croak "$BNF_package->$_ must do CodeRef" unless CodeRef->check($BNF{$_});
     } else {
       croak "$BNF_package->$_ must do Str" unless Str->check($BNF{$_});
     }
@@ -119,21 +129,34 @@ SLIF
     my $grammar = Marpa::R2::Scanless::G->new({source => \$slif, trace_file_handle => $trace_file_handle});
     $grammars->set_grammar($package, $grammar);
     #
-    # General stub to manage the reserved/unreserved indices
+    # It is very important to remember the meaning of indices:
+    # --------------------------------------------------------
+    # 0 = escaped
+    # 1 = unescaped
+    # 2 = raw
+    # 3 = normalized escaped
+    # 4 = normalized unescaped
+    # 5 = normalized raw
     #
+    my $normalizer = $BNF{normalizer};
     my $args2array_sub;
     if (Undef->check($BNF{reserved})) {
       #
       # No escape/unescape in output - at the most we decode the input
       #
       $args2array_sub = sub {
+        #
+        # $self is a MooX::Struct
+        #
         my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
-        my $rc = ['', ''];
+        my $rc = [ ('') x _MAX ];
         foreach (@args) {
           #
           # When it is not an array ref, it is a lexeme
           #
           if (! ArrayRef->check($_)) {
+            $rc->[RAW]            .= $_,
+            $rc->[NORMALIZED_RAW] .= $_;
             #
             # And there is a special lexeme: pct_encoded
             #
@@ -142,11 +165,22 @@ SLIF
               while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
               $_ = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
             }
-            $rc->[0] .= $_, $rc->[1] .= $_
+            $rc->[ESCAPED]              .= $_,
+            $rc->[NORMALIZED_ESCAPED]   .= $_,
+            $rc->[UNESCAPED]            .= $_,
+            $rc->[NORMALIZED_UNESCAPED] .= $_
           } else {
-            $rc->[0] .= $_->[0], $rc->[1] .= $_->[1]
+            $rc->[ESCAPED]              .= $_->[ESCAPED],
+            $rc->[UNESCAPED]            .= $_->[UNESCAPED],
+            $rc->[RAW]                  .= $_->[RAW],
+            $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED],
+            $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
+            $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW]
           }
         }
+        $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
+        $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
+        $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
         $rc
       }
     } else {
@@ -156,15 +190,22 @@ SLIF
       # We escape a character only if it is not in the reserved set, nor in the unreserved set,
       # i.e. we can use a single regexp: ! (reserved or unreserved)
       #
+      # From implementation point of view:
+      # - "reserved"   is always a regexp equivalent to the <reserved>   (unproductive) rule
+      # - "unreserved" is always a regexp equivalent to the <unreserved> (  productive) rule
+      #
       my $character_not_to_escape = qr/(?:$reserved_regexp|$unreserved_regexp)/;
+        use Data::Dumper;
       $args2array_sub = sub {
         my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
-        my $rc = ['', ''];
+        my $rc = [ ('') x _MAX ];
         foreach (@args) {
           #
           # When it is not an array ref, it is a lexeme
           #
           if (! ArrayRef->check($_)) {
+            $rc->[RAW]            .= $_,
+            $rc->[NORMALIZED_RAW] .= $_;
             #
             # And there is a special lexeme: pct_encoded
             #
@@ -190,11 +231,22 @@ SLIF
                     join('', map { '%' . uc(unpack('H2', $_)) } split(//, Encode::encode('UTF-8', $character, Encode::FB_CROAK)))
                   }
             }
-            $rc->[0] .= $escaped, $rc->[1] .= $unescaped
+            $rc->[ESCAPED]              .= $escaped,
+            $rc->[NORMALIZED_ESCAPED]   .= $escaped,
+            $rc->[UNESCAPED]            .= $unescaped,
+            $rc->[NORMALIZED_UNESCAPED] .= $escaped
           } else {
-            $rc->[0] .= $_->[0], $rc->[1] .= $_->[1]
+            $rc->[ESCAPED]              .= $_->[ESCAPED],
+            $rc->[UNESCAPED]            .= $_->[UNESCAPED],
+            $rc->[RAW]                  .= $_->[RAW],
+            $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED],
+            $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
+            $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW]
           }
         }
+        $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
+        $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
+        $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
         $rc
       };
     }
@@ -215,19 +267,25 @@ SLIF
         #
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
         #
-        # We always propagate only an ArrayRef containing a concatenation, except then
+        # We always propagate only an ArrayRef containing a concatenation, except when
         # $lhs is start_symbol, then we return $self.
-        # The indice 0 of the array ref contains the unescaped string: this is just a
-        # concatenation of what came in.
-        # The indice 1 of the array ref contains the escaped string, and the rule is:
-        # - If the indice 1 is not setted (predicate is false), then:
+        #
+        # The indice 0 of the array ref contains the escaped string, and the rule is:
         #   - for every character not in the reserved set, escape any character not in the unreserved set
-        # From implementation point of view:
-        # - "reserved"   is always a regexp equivalent to the <reserved>   (unproductive) rule
-        # - "unreserved" is always a regexp equivalent to the <unreserved> (  productive) rule
+        #
+        # The indice 1 of the array ref contains the unescaped string: this is just a
+        # concatenation of what came in, but AFTER eventual percent decoding
+        #
+        # The indice 2 of the array ref contains the raw string: per def this will be equivalent to input
+        #
+        # The indice 3 contains the normalized escaped string
+        # The indice 4 contains the normalized unescaped string
+        # The indice 5 contains the normalized raw string
         #
         my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
-        do { $G1{$lhs}->($self->[0], $rc->[0]), $G1{$lhs}->($self->[1], $rc->[1]) } if exists $G1{$lhs};
+        my $is_start_symbol = $lhs eq $BNF{start_symbol};
+        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0.._MAX-1) } if exists $G1{$lhs};
+        do {     $self->[$_]->_output($rc->[$_]) for (0.._MAX-1) } if $is_start_symbol;
         {
           #
           # Any of the indices can be taken as a logger
@@ -235,7 +293,7 @@ SLIF
           local $\;
           $self->[0]->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
         }
-        $lhs eq $BNF{start_symbol} ? $self : $rc
+        $is_start_symbol ? $self : $rc
       }
     } else {
       #
@@ -247,8 +305,10 @@ SLIF
         my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
         my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
-        do { $G1{$lhs}->($self->[0], $rc->[0]), $G1{$lhs}->($self->[1], $rc->[1]) } if exists $G1{$lhs};
-        $lhs eq $BNF{start_symbol} ? $self : $rc
+        my $is_start_symbol = $lhs eq $BNF{start_symbol};
+        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0.._MAX-1) } if exists $G1{$lhs};
+        do {     $self->[$_]->_output($rc->[$_]) for (0.._MAX-1) } if $is_start_symbol;
+        $is_start_symbol ? $self : $rc
       }
     }
     install_modifier($package, 'fresh', $default_action, $default_action_sub);
@@ -290,6 +350,15 @@ sub percent_encode {
     !egp;
   $encoded
 }
+#
+# Indice helpers
+#
+sub _indice_escaped              { ESCAPED              }
+sub _indice_unescaped            { UNESCAPED            }
+sub _indice_raw                  { RAW                  }
+sub _indice_normalized_escaped   { NORMALIZED_ESCAPED   }
+sub _indice_normalized_unescaped { NORMALIZED_UNESCAPED };
+sub _indice_normalized_raw       { NORMALIZED_RAW       };
 
 1;
 

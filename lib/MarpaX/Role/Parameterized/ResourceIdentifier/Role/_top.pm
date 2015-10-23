@@ -42,26 +42,40 @@ my $stringified_absolute_reference = "Type::Tiny"->new(
                                                        message    => sub { "$_ ain't a stringified absolute resource identifier" },
                                                       );
 our $check1 = compile(StringLike|ArrayRef, Maybe[$schemelike|$absolute_reference|$stringified_absolute_reference]);
-our $check2 = compile(Str, Bytes, Maybe[Int]);
+our $check2 = compile(Str, Bytes, Maybe[Int], Maybe[Bool], Maybe[Bool]);
 
 sub _BUILDARGS {
   my $class = shift;
 
   my ($first, $scheme) = $check1->($_[0], $_[1]);  # So that there always two parameters, even if 2nd is undef
   #
-  # If first is an array ref, it must have at least two arguments pushed into decode()
-  # - First is Str (encoding)
-  # - Second is Bytes (bytes)
-  # - Eventual third is Int (decode option)
+  # If first is a HashRef ref, it must have at least two keys pushed into decode():
+  # - octets          Bytes (bytes)
+  # - encoding        Str (encoding)
+  # - decode_strategy Maybe[Int] (decode option)
+  # It may also have:
+  # - idn             Maybe[Bool]
+  # - nfc             Maybe[Bool]
   #
   my $input;
-  if (ArrayRef->check($first)) {
-    my ($encoding, $bytes, $opt) = $check2->(@{$first});
+  my $nfc;
+  my $idn;
+  if (HashRef->check($first)) {
+    croak 'octets key must exist' if (! exists($first->{octets}));
+    croak 'encoding key must exist' if (! exists($first->{encoding}));
+
+    my ($encoding, $bytes, $decode_strategy, $nfc, $idn) = $check2->(
+                                                                     $first->{encoding},
+                                                                     $first->{octets},
+                                                                     $first->{decode_strategy},
+                                                                     $first->{nfc},
+                                                                     $first->{idn},
+                                                                    );
     #
     # Default, is not provided, is FB_CROAK
     #
-    $opt //= Encode::FB_CROAK;
-    $input = decode($encoding, $bytes, $opt);
+    $decode_strategy //= Encode::FB_CROAK;
+    $input = decode($encoding, $bytes, $decode_strategy);
   } else {
     $input = "$first";  # Eventual stringification
   }
@@ -73,7 +87,7 @@ sub _BUILDARGS {
   $input =~ s/^"(.*)"$/$1/;
   $input =~ s/^\s+//;
   $input =~ s/\s+$//;
-  my $args = { input => $input };
+  my $args = { input => $input, nfc=> $nfc, idn => $idn };
   $args->{scheme} = $scheme if (! Undef->check($scheme));
   #
   # Return arguments in a hash ref a per the spec

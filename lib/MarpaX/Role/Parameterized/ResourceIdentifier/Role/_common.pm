@@ -23,6 +23,7 @@ use Types::Standard -all;
 #
 use MooX::Struct
   Common => [
+             _output  => [ is => 'rw',  isa => Str      , default => sub {    '' } ], # Parse tree value
              scheme   => [ is => 'rwp', isa => Str|Undef, default => sub { undef } ], # Can be undef
              opaque   => [ is => 'rwp', isa => Str      , default => sub {    '' } ], # Always set
              fragment => [ is => 'rwp', isa => Str|Undef, default => sub { undef } ]  # Can be undef
@@ -37,7 +38,7 @@ has has_recognized_scheme => ( is => 'rwp', isa => Bool, default => sub { FALSE 
 #
 # Indice 0: escaped value, indice 1: unescaped value
 #
-has _structs_common       => ( is => 'rw',  isa => ArrayRef[Object]);
+has _structs              => ( is => 'rw',  isa => ArrayRef[Object]);
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
@@ -97,13 +98,24 @@ role {
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
       {
         local $\;
-        $self->_logger->debugf('%s: Getting common parse tree value', $package);
+        $self->_logger->tracef('%s: Getting common parse tree value', $package);
       }
-      $self->_structs_common(${$r->value([ Common->new, Common->new ])});
+      $self->_structs(${$r->value([
+                                   Common->new,               # Escaped
+                                   Common->new,               # Unescaped
+                                   Common->new,               # Raw
+                                   Common->new,               # Normalized escaped
+                                   Common->new,               # Normalized unescaped
+                                   Common->new                # Normalized raw
+                                  ])});
       {
         local $\;
-        $self->_logger->debugf('%s: Escaped parse tree value is %s', $package, $self->_structs_common->[0]->TO_HASH);
-        $self->_logger->debugf('%s: Unescaped parse tree value is %s', $package, $self->_structs_common->[1]->TO_HASH);
+        $self->_logger->debugf('%s: Escaped parse tree value              is %s', $package, $self->_structs->[$self->_indice_escaped             ]->_output);
+        $self->_logger->debugf('%s: Unescaped parse tree value            is %s', $package, $self->_structs->[$self->_indice_unescaped           ]->_output);
+        $self->_logger->debugf('%s: Raw parse tree value                  is %s', $package, $self->_structs->[$self->_indice_raw                 ]->_output);
+        $self->_logger->debugf('%s: Normalized escaped parse tree value   is %s', $package, $self->_structs->[$self->_indice_normalized_escaped  ]->_output);
+        $self->_logger->debugf('%s: Normalized unescaped parse tree value is %s', $package, $self->_structs->[$self->_indice_normalized_unescaped]->_output);
+        $self->_logger->debugf('%s: Normalized raw parse tree value       is %s', $package, $self->_structs->[$self->_indice_normalized_raw      ]->_output);
       }
     }
   } else {
@@ -112,7 +124,14 @@ role {
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
-      $self->_structs_common(${$r->value([ Common->new, Common->new ])});
+      $self->_structs(${$r->value([
+                                   Common->new,               # Escaped
+                                   Common->new,               # Unescaped
+                                   Common->new,               # Raw
+                                   Common->new,               # Normalized escaped
+                                   Common->new,               # Normalized unescaped
+                                   Common->new                # Normalized raw
+                                  ])});
     }
   }
   method _trigger_input => $_trigger_input_sub;
@@ -210,15 +229,19 @@ role {
   #
   foreach (Common->FIELDS) {
     my $field = $_;
-    method "_$field" => sub {
-      my ($self, $unescape, $normalize) = @_;
-      my $rc = $self->_structs_common->[$unescape ? 1 : 0]->$field;
-      $rc = $self->normalize($field, $rc) if ($normalize);
-      $rc
-    };
+    method "_$field" => sub { my $self = shift; $self->_structs_generic->[$self->_indice(@_)]->$field };
   }
   method is_relative => sub { FALSE };
   method is_absolute => sub { FALSE };
+
+  #
+  # Help for indices
+  #
+  method _indice => sub {
+    my ($self, $escaped, $unescaped, $raw) = @_;
+
+    $escaped ? 0 : $unescaped ? 1 : 2
+  };
 };
 
 1;
