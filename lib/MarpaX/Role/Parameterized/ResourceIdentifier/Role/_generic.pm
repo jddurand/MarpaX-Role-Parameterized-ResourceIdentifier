@@ -54,8 +54,9 @@ use Scalar::Util qw/blessed/;
 #
 # Indice 0: escaped value, indice 1: unescaped value
 #
-has _structs_generic => ( is => 'rw', isa => ArrayRef[Object]);             # Indice 0: escaped, Indice 1: unescaped
-has regnameconvert   => ( is => 'rw', isa => Bool, default => sub { 0 } );
+has _structs_generic => ( is => 'rw', isa => ArrayRef[Object]);              # Indice 0: escaped, Indice 1: unescaped
+has idn              => ( is => 'rw', isa => Bool, default => sub { !!0 } ); # Is reg-name an IDN
+has nfc              => ( is => 'rw', isa => Bool, default => sub { !!1 } ); # Is input normalized
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
