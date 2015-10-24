@@ -18,6 +18,7 @@ use Moo::Role;
 use MooX::Role::Parameterized;
 use Types::Standard -all;
 use Try::Tiny;
+our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 use MooX::Struct
   Generic => [
               _output         => [ is => 'rw',  isa => Str,           default => sub {    '' } ], # Parse tree value
@@ -47,7 +48,7 @@ use MooX::Struct
               ipv6_addrz      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
               ipvfuture       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
               zoneid          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-              segments        => [ is => 'rwp', isa => ArrayRef[Str], default => sub {  [''] } ],
+              segments        => [ is => 'rwp', isa => ArrayRef[Str], default => sub { $setup->uri_compat ? [''] : [] } ],
              ];
 use Role::Tiny;
 use Scalar::Util qw/blessed/;
@@ -58,7 +59,6 @@ use Scalar::Util qw/blessed/;
 has _structs => ( is => 'rw', isa => ArrayRef[Object]);              # Indice 0: escaped, Indice 1: unescaped
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
-our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 
 role {
   my $params = shift;
@@ -127,17 +127,24 @@ role {
           $self->_logger->debugf('%s: %-30s = %s', $package, $self->_indice_description($_), $self->_structs->[$_]->_output);
         }
       } catch {
-        #
-        # URI compatibility, it is supposed to match the generic syntax
-        #
-        $self->_logger->tracef('%s: Generic parsing failure', $package);
-        foreach (split(/\n/, $_)) {
-          $self->_logger->tracef('%s: %s', $package, $_);
+        if ($setup->uri_compat) {
+          #
+          # URI compatibility, it is supposed to match the generic syntax
+          #
+          $self->_logger->tracef('%s: Generic parsing failure', $package);
+          foreach (split(/\n/, $_)) {
+            $self->_logger->tracef('%s: %s', $package, $_);
+          }
+          #
+          # This will do the parsing using the common BNF
+          #
+          $self->$orig($input);
+        } else {
+          #
+          # Throw an error
+          #
+          croak $_;
         }
-        #
-        # This will do the parsing using the common BNF
-        #
-        $self->$orig($input);
         return
       };
     }
