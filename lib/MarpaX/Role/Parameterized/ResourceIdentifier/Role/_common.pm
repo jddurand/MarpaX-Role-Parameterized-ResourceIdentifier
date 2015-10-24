@@ -70,8 +70,6 @@ role {
   if ($setup->with_logger) {
     Role::Tiny->apply_roles_to_package($package, qw/MooX::Role::Logger/);
     install_modifier($package, $package->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
-    Role::Tiny->apply_roles_to_package(Common, qw/MooX::Role::Logger/);
-    install_modifier(Common, Common->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
   }
   #
   # Recognizer option is not configurable: we WILL modify the grammar and inject rules with a notion of rank
@@ -100,7 +98,8 @@ role {
         local $\;
         $self->_logger->tracef('%s: Getting common parse tree value', $package);
       }
-      $self->_structs(${$r->value([ map { Common->new } (0..$self->_indice__max) ])});
+      $self->_structs([map { Common->new } (0..$self->_indice__max)]);
+      $r->value($self);
       foreach (0..$self->_indice__max) {
         local $\;
         $self->_logger->debugf('%s: %-30s = %s', $package, $self->_indice_description($_), $self->_structs->[$_]->_output);
@@ -112,7 +111,8 @@ role {
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
-      $self->_structs(${$r->value([ map { Common->new } (0..$self->_indice__max) ])});
+      $self->_structs([map { Common->new } (0..$self->_indice__max)]);
+      $r->value($self);
     }
   }
   method _trigger_input => $_trigger_input_sub;

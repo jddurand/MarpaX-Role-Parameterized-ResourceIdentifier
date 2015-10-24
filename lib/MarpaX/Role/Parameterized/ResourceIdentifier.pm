@@ -46,18 +46,23 @@ role {
   #
   # Sanity check
   # ------------
-  foreach (qw/BNF_package package/) {
-    croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
+  foreach (qw/BNF_package package normalizer/) {
+    if ($_ eq 'normalizer') {
+      croak "$_ must do CodeRef" unless exists($params->{$_}) && CodeRef->check($params->{$_});
+    } else {
+      croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
+    }
   }
 
   my $BNF_package       = $params->{BNF_package};
   my $package           = $params->{package};
+  my $normalizer        = $params->{normalizer};
 
   use_module($BNF_package);
   my $BNF_instance      = $BNF_package->new;
 
   my %BNF = ();
-  foreach (qw/start_symbol bnf pct_encoded utf8_octets reserved unreserved normalizer/) {
+  foreach (qw/start_symbol bnf pct_encoded utf8_octets reserved unreserved/) {
     $BNF{$_} = $BNF_instance->$_;
     if ($_ eq 'pct_encoded') {
       croak "$BNF_package->$_ must do Str or Undef" unless Str->check($BNF{$_}) || Undef->check($BNF{$_});
@@ -65,8 +70,6 @@ role {
       croak "$BNF_package->$_ must do Bool or Undef" unless Bool->check($BNF{$_}) || Undef->check($BNF{$_});
     } elsif (($_ eq 'reserved') || ($_ eq 'unreserved')) {
       croak "$BNF_package->$_ must do RegexpRef or Undef" unless RegexpRef->check($BNF{$_}) || Undef->check($BNF{$_});
-    } elsif ($_ eq 'normalizer') {
-      croak "$BNF_package->$_ must do CodeRef" unless CodeRef->check($BNF{$_});
     } else {
       croak "$BNF_package->$_ must do Str" unless Str->check($BNF{$_});
     }
@@ -138,7 +141,6 @@ SLIF
     # 4 = normalized unescaped
     # 5 = normalized raw
     #
-    my $normalizer = $BNF{normalizer};
     my $args2array_sub;
     if (Undef->check($BNF{reserved})) {
       #
@@ -282,14 +284,12 @@ SLIF
         #
         my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
         my $is_start_symbol = $lhs eq $BNF{start_symbol};
-        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
-        do {     $self->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
+        my $structs = $self->_structs;
+        do { $G1{$lhs}->($structs->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
+        do {     $structs->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
         {
-          #
-          # Any of the indices can be taken as a logger
-          #
           local $\;
-          $self->[0]->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
+          $self->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
         }
         $is_start_symbol ? $self : $rc
       }
@@ -304,8 +304,9 @@ SLIF
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
         my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
         my $is_start_symbol = $lhs eq $BNF{start_symbol};
-        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
-        do {     $self->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
+        my $structs = $self->_structs;
+        do { $G1{$lhs}->($structs->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
+        do {     $structs->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
         $is_start_symbol ? $self : $rc
       }
     }

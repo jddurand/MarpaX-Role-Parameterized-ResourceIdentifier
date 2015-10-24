@@ -10,6 +10,5 @@ requires 'pct_encoded';
 requires 'utf8_octets';
 requires 'reserved';
 requires 'unreserved';
-requires 'normalizer';
 
 1;

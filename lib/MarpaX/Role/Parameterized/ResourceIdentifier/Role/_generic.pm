@@ -56,14 +56,15 @@ use Scalar::Util qw/blessed/;
 # Indice 0: escaped value, indice 1: unescaped value
 #
 has _structs => ( is => 'rw', isa => ArrayRef[Object]);              # Indice 0: escaped, Indice 1: unescaped
-has idn      => ( is => 'rw', isa => Bool, default => sub { !!0 } ); # Is reg-name an IDN
-has nfc      => ( is => 'rw', isa => Bool, default => sub { !!1 } ); # Is input normalized
 
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 
 role {
   my $params = shift;
+
+  requires 'idn'; # has idn      => ( is => 'rw', isa => Bool, default => sub { !!0 } ); # Is reg-name an IDN
+  requires 'nfc'; # has nfc      => ( is => 'rw', isa => Bool, default => sub { !!1 } ); # Is input normalized
 
   #
   # Sanity check
@@ -86,8 +87,6 @@ role {
   if ($setup->with_logger) {
     Role::Tiny->apply_roles_to_package($package, qw/MooX::Role::Logger/);
     install_modifier($package, $package->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
-    Role::Tiny->apply_roles_to_package(Generic, qw/MooX::Role::Logger/);
-    install_modifier(Generic, Generic->can('_build__logger_category') ? 'around' : 'fresh', '_build__logger_category', sub { $package });
   }
   #
   # "Parent" role
@@ -121,7 +120,8 @@ role {
           local $\;
           $self->_logger->tracef('%s: Getting generic parse tree value', $package);
         }
-        $self->_structs(${$r->value([ map { Generic->new } (0..$self->_indice__max) ])});
+        $self->_structs([map { Generic->new } (0..$self->_indice__max) ]);
+        $r->value($self);
         foreach (0..$self->_indice__max) {
           local $\;
           $self->_logger->debugf('%s: %-30s = %s', $package, $self->_indice_description($_), $self->_structs->[$_]->_output);
@@ -148,7 +148,8 @@ role {
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
-        $self->_structs(${$r->value([ map { Generic->new } (0..$self->_indice__max) ])});
+        $self->_structs([map { Generic->new } (0..$self->_indice__max) ]);
+        $r->value($self);
       } catch {
         #
         # URI compatibility, it is supposed to match the generic syntax
