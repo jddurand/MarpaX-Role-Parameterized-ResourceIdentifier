@@ -339,14 +339,14 @@ sub percent_encode {
 sub _indice_raw                  { RAW                  }
 sub _indice_escaped              { ESCAPED              }
 sub _indice_unescaped            { UNESCAPED            }
-sub _indice_normalized_raw       { NORMALIZED_RAW       };
+sub _indice_normalized_raw       { NORMALIZED_RAW       }
 sub _indice_normalized_escaped   { NORMALIZED_ESCAPED   }
-sub _indice_normalized_unescaped { NORMALIZED_UNESCAPED };
+sub _indice_normalized_unescaped { NORMALIZED_UNESCAPED }
 
 sub _indice_description {
   my ($self, $indice) = @_;
 
-  if ($indice == $self->_indice_raw)                     { return 'Raw value'                  }
+  if    ($indice == $self->_indice_raw)                  { return 'Raw value'                  }
   elsif ($indice == $self->_indice_escaped)              { return 'Escaped value'              }
   elsif ($indice == $self->_indice_unescaped)            { return 'Unescaped value'            }
   elsif ($indice == $self->_indice_normalized_raw)       { return 'Normalized raw value'       }
@@ -356,8 +356,8 @@ sub _indice_description {
 }
 
 my $max = _COUNT - 1;
-sub _indice__count               { _COUNT               };
-sub _indice__max                 { $max                 };
+sub _indice__count               { _COUNT               }
+sub _indice__max                 { $max                 }
 
 1;
 
