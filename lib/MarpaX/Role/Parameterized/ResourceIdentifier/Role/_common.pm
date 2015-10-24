@@ -100,22 +100,10 @@ role {
         local $\;
         $self->_logger->tracef('%s: Getting common parse tree value', $package);
       }
-      $self->_structs(${$r->value([
-                                   Common->new,               # Raw
-                                   Common->new,               # Escaped
-                                   Common->new,               # Unescaped
-                                   Common->new,               # Normalized raw
-                                   Common->new,               # Normalized escaped
-                                   Common->new                # Normalized unescaped
-                                  ])});
-      {
+      $self->_structs(${$r->value([ map { Common->new } (0..$self->_indice__max) ])});
+      foreach (0..$self->_indice__max) {
         local $\;
-        $self->_logger->debugf('%s: Raw parse tree value                  is %s', $package, $self->_structs->[$self->_indice_raw                 ]->_output);
-        $self->_logger->debugf('%s: Escaped parse tree value              is %s', $package, $self->_structs->[$self->_indice_escaped             ]->_output);
-        $self->_logger->debugf('%s: Unescaped parse tree value            is %s', $package, $self->_structs->[$self->_indice_unescaped           ]->_output);
-        $self->_logger->debugf('%s: Normalized raw parse tree value       is %s', $package, $self->_structs->[$self->_indice_normalized_raw      ]->_output);
-        $self->_logger->debugf('%s: Normalized escaped parse tree value   is %s', $package, $self->_structs->[$self->_indice_normalized_escaped  ]->_output);
-        $self->_logger->debugf('%s: Normalized unescaped parse tree value is %s', $package, $self->_structs->[$self->_indice_normalized_unescaped]->_output);
+        $self->_logger->debugf('%s: %-30s = %s', $package, $self->_indice_description($_), $self->_structs->[$_]->_output);
       }
     }
   } else {
@@ -124,14 +112,7 @@ role {
       my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
-      $self->_structs(${$r->value([
-                                   Common->new,               # Raw
-                                   Common->new,               # Escaped
-                                   Common->new,               # Unescaped
-                                   Common->new,               # Normalized raw
-                                   Common->new,               # Normalized escaped
-                                   Common->new                # Normalized unescaped
-                                  ])});
+      $self->_structs(${$r->value([ map { Common->new } (0..$self->_indice__max) ])});
     }
   }
   method _trigger_input => $_trigger_input_sub;

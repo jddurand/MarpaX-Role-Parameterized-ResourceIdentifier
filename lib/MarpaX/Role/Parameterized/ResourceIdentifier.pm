@@ -34,7 +34,7 @@ use constant {
   NORMALIZED_RAW       => 3,
   NORMALIZED_ESCAPED   => 4,
   NORMALIZED_UNESCAPED => 5,
-  _MAX                 => 6
+  _COUNT               => 6
 };
 my $action_count = 0;
 our $grammars    = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
@@ -146,7 +146,7 @@ SLIF
       #
       $args2array_sub = sub {
         my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
-        my $rc = [ ('') x _MAX ];
+        my $rc = [ ('') x _COUNT ];
 
         foreach (@args) {
           if (! ArrayRef->check($_)) {
@@ -186,7 +186,7 @@ SLIF
       my $unreserved_regexp = $BNF{unreserved};
       $args2array_sub = sub {
         my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
-        my $rc = [ ('') x _MAX ];
+        my $rc = [ ('') x _COUNT ];
 
         foreach (@args) {
           if (! ArrayRef->check($_)) {
@@ -253,6 +253,7 @@ SLIF
     my $default_action_sub;
     my $pct_encoded = Str->check($BNF{pct_encoded}) ? $BNF{pct_encoded} : '';
     my $utf8_octets = Bool->check($BNF{utf8_octets}) ? $BNF{utf8_octets} : 0;
+    my $max = _COUNT - 1;
     if ($setup->with_logger) {
       $default_action_sub = sub {
         my ($self, @args) = @_;
@@ -281,8 +282,8 @@ SLIF
         #
         my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
         my $is_start_symbol = $lhs eq $BNF{start_symbol};
-        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0.._MAX-1) } if exists $G1{$lhs};
-        do {     $self->[$_]->_output($rc->[$_]) for (0.._MAX-1) } if $is_start_symbol;
+        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
+        do {     $self->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
         {
           #
           # Any of the indices can be taken as a logger
@@ -303,8 +304,8 @@ SLIF
         $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
         my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
         my $is_start_symbol = $lhs eq $BNF{start_symbol};
-        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0.._MAX-1) } if exists $G1{$lhs};
-        do {     $self->[$_]->_output($rc->[$_]) for (0.._MAX-1) } if $is_start_symbol;
+        do { $G1{$lhs}->($self->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
+        do {     $self->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
         $is_start_symbol ? $self : $rc
       }
     }
@@ -356,6 +357,22 @@ sub _indice_unescaped            { UNESCAPED            }
 sub _indice_normalized_raw       { NORMALIZED_RAW       };
 sub _indice_normalized_escaped   { NORMALIZED_ESCAPED   }
 sub _indice_normalized_unescaped { NORMALIZED_UNESCAPED };
+
+sub _indice_description {
+  my ($self, $indice) = @_;
+
+  if ($indice == $self->_indice_raw)                     { return 'Raw value'                  }
+  elsif ($indice == $self->_indice_escaped)              { return 'Escaped value'              }
+  elsif ($indice == $self->_indice_unescaped)            { return 'Unescaped value'            }
+  elsif ($indice == $self->_indice_normalized_raw)       { return 'Normalized raw value'       }
+  elsif ($indice == $self->_indice_normalized_escaped)   { return 'Normalized escaped value'   }
+  elsif ($indice == $self->_indice_normalized_unescaped) { return 'Normalized unescaped value' }
+  else                                                   { return 'Unknown indice'             }
+}
+
+my $max = _COUNT - 1;
+sub _indice__count               { _COUNT               };
+sub _indice__max                 { $max                 };
 
 1;
 

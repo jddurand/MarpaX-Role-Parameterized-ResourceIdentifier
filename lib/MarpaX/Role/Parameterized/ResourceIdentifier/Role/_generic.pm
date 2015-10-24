@@ -121,22 +121,10 @@ role {
           local $\;
           $self->_logger->tracef('%s: Getting generic parse tree value', $package);
         }
-        $self->_structs(${$r->value([
-                                     Generic->new,          # Raw
-                                     Generic->new,          # Escaped
-                                     Generic->new,          # Unescaped
-                                     Generic->new,          # Normalized raw
-                                     Generic->new,          # Normalized escaped
-                                     Generic->new           # Normalized unescaped
-                                    ])});
-        {
+        $self->_structs(${$r->value([ map { Generic->new } (0..$self->_indice__max) ])});
+        foreach (0..$self->_indice__max) {
           local $\;
-          $self->_logger->debugf('%s: Raw parse tree value                  is %s', $package, $self->_structs->[$self->_indice_raw                 ]->_output);
-          $self->_logger->debugf('%s: Escaped parse tree value              is %s', $package, $self->_structs->[$self->_indice_escaped             ]->_output);
-          $self->_logger->debugf('%s: Unescaped parse tree value            is %s', $package, $self->_structs->[$self->_indice_unescaped           ]->_output);
-          $self->_logger->debugf('%s: Normalized raw parse tree value       is %s', $package, $self->_structs->[$self->_indice_normalized_raw      ]->_output);
-          $self->_logger->debugf('%s: Normalized escaped parse tree value   is %s', $package, $self->_structs->[$self->_indice_normalized_escaped  ]->_output);
-          $self->_logger->debugf('%s: Normalized unescaped parse tree value is %s', $package, $self->_structs->[$self->_indice_normalized_unescaped]->_output);
+          $self->_logger->debugf('%s: %-30s = %s', $package, $self->_indice_description($_), $self->_structs->[$_]->_output);
         }
       } catch {
         #
@@ -160,14 +148,7 @@ role {
       try {
         $r->read(\$input);
         croak 'Parse of the input is ambiguous' if $r->ambiguous;
-        $self->_structs(${$r->value([
-                                     Generic->new,          # Raw
-                                     Generic->new,          # Escaped
-                                     Generic->new,          # Unescaped
-                                     Generic->new,          # Normalized raw
-                                     Generic->new,          # Normalized escaped
-                                     Generic->new           # Normalized unescaped
-                                    ])});
+        $self->_structs(${$r->value([ map { Generic->new } (0..$self->_indice__max) ])});
       } catch {
         #
         # URI compatibility, it is supposed to match the generic syntax
