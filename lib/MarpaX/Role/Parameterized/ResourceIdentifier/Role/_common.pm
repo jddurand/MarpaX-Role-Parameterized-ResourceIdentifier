@@ -11,6 +11,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
+use Data::Dumper;
 use Module::Runtime qw/use_module/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
@@ -102,7 +103,8 @@ role {
       $r->value($self);
       foreach (0..$self->_indice__max) {
         local $\;
-        $self->_logger->debugf('%s: %-30s = %s', $package, $self->_indice_description($_), $self->_structs->[$_]->_output);
+        my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [sprintf('%-30s', $self->_indice_description($_))]);
+        $self->_logger->debugf('%s: %s', $package, $d->Dump);
       }
     }
   } else {
