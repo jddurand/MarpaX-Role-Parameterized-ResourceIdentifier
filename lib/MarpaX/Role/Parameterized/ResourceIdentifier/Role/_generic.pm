@@ -64,7 +64,8 @@ role {
   my $params = shift;
 
   requires 'idn'; # has idn      => ( is => 'rw', isa => Bool, default => sub { !!0 } ); # Is reg-name an IDN
-  requires 'nfc'; # has nfc      => ( is => 'rw', isa => Bool, default => sub { !!1 } ); # Is input normalized
+  requires 'is_character_normalized';
+  requires 'character_normalization_strategy';
 
   #
   # Sanity check
@@ -192,7 +193,6 @@ role {
       $self->$orig($field, $value);
     }
   };
-  install_modifier($package, 'around', 'normalize', $normalize_sub);
   install_modifier($package, 'around', 'is_relative', sub { shift; Str->check(shift->_struct_generic->relative_ref) });
   install_modifier($package, 'around', 'is_absolute', sub { shift; Str->check(shift->_struct_generic->iri) });
 };

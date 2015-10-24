@@ -195,14 +195,6 @@ role {
                       \'==\' => sub {   _eq(@_) },
                       \'!=\' => sub { ! _eq(@_) }
                      )';
-  method normalize => sub {
-    my ($self, $field, $value) = @_;
-    if ($field eq 'scheme') {
-      $value = lc($value);
-    }
-
-    $value
-  };
   #
   # Every internal field is accessible using _xxx, and eventually a boolean saying
   # if the output should be the escaped version, or the unescaped one.
