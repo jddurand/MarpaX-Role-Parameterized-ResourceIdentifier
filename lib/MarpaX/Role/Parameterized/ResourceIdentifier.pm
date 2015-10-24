@@ -28,12 +28,12 @@ use Role::Tiny;
 use Types::Standard -all;
 use Type::Params qw/compile/;
 use constant {
-  ESCAPED              => 0,
-  UNESCAPED            => 1,
-  RAW                  => 2,
-  NORMALIZED_ESCAPED   => 3,
-  NORMALIZED_UNESCAPED => 4,
-  NORMALIZED_RAW       => 5,
+  RAW                  => 0,
+  ESCAPED              => 1,
+  UNESCAPED            => 2,
+  NORMALIZED_RAW       => 3,
+  NORMALIZED_ESCAPED   => 4,
+  NORMALIZED_UNESCAPED => 5,
   _MAX                 => 6
 };
 my $action_count = 0;
@@ -350,12 +350,12 @@ sub percent_encode {
 #
 # Indice helpers
 #
+sub _indice_raw                  { RAW                  }
 sub _indice_escaped              { ESCAPED              }
 sub _indice_unescaped            { UNESCAPED            }
-sub _indice_raw                  { RAW                  }
+sub _indice_normalized_raw       { NORMALIZED_RAW       };
 sub _indice_normalized_escaped   { NORMALIZED_ESCAPED   }
 sub _indice_normalized_unescaped { NORMALIZED_UNESCAPED };
-sub _indice_normalized_raw       { NORMALIZED_RAW       };
 
 1;
 

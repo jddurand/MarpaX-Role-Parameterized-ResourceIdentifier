@@ -101,21 +101,21 @@ role {
         $self->_logger->tracef('%s: Getting common parse tree value', $package);
       }
       $self->_structs(${$r->value([
+                                   Common->new,               # Raw
                                    Common->new,               # Escaped
                                    Common->new,               # Unescaped
-                                   Common->new,               # Raw
+                                   Common->new,               # Normalized raw
                                    Common->new,               # Normalized escaped
-                                   Common->new,               # Normalized unescaped
-                                   Common->new                # Normalized raw
+                                   Common->new                # Normalized unescaped
                                   ])});
       {
         local $\;
+        $self->_logger->debugf('%s: Raw parse tree value                  is %s', $package, $self->_structs->[$self->_indice_raw                 ]->_output);
         $self->_logger->debugf('%s: Escaped parse tree value              is %s', $package, $self->_structs->[$self->_indice_escaped             ]->_output);
         $self->_logger->debugf('%s: Unescaped parse tree value            is %s', $package, $self->_structs->[$self->_indice_unescaped           ]->_output);
-        $self->_logger->debugf('%s: Raw parse tree value                  is %s', $package, $self->_structs->[$self->_indice_raw                 ]->_output);
+        $self->_logger->debugf('%s: Normalized raw parse tree value       is %s', $package, $self->_structs->[$self->_indice_normalized_raw      ]->_output);
         $self->_logger->debugf('%s: Normalized escaped parse tree value   is %s', $package, $self->_structs->[$self->_indice_normalized_escaped  ]->_output);
         $self->_logger->debugf('%s: Normalized unescaped parse tree value is %s', $package, $self->_structs->[$self->_indice_normalized_unescaped]->_output);
-        $self->_logger->debugf('%s: Normalized raw parse tree value       is %s', $package, $self->_structs->[$self->_indice_normalized_raw      ]->_output);
       }
     }
   } else {
