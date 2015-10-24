@@ -125,12 +125,12 @@ role {
       $r->read(\$input);
       croak 'Parse of the input is ambiguous' if $r->ambiguous;
       $self->_structs(${$r->value([
+                                   Common->new,               # Raw
                                    Common->new,               # Escaped
                                    Common->new,               # Unescaped
-                                   Common->new,               # Raw
+                                   Common->new,               # Normalized raw
                                    Common->new,               # Normalized escaped
-                                   Common->new,               # Normalized unescaped
-                                   Common->new                # Normalized raw
+                                   Common->new                # Normalized unescaped
                                   ])});
     }
   }
