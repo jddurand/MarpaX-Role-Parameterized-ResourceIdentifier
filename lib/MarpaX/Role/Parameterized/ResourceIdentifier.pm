@@ -226,8 +226,8 @@ SLIF
                   }
                 }
               }
-              $rc->[UNESCAPED] .= $unescaped,      $rc->[NORMALIZED_UNESCAPED] .= $unescaped,
-              $rc->[ESCAPED]   .= $escaped,        $rc->[NORMALIZED_ESCAPED]   .= $escaped
+              $rc->[UNESCAPED] .= $unescaped, $rc->[NORMALIZED_UNESCAPED] .= $unescaped,
+              $rc->[ESCAPED]   .= $escaped,   $rc->[NORMALIZED_ESCAPED]   .= $escaped
             }
           } else {
             #
