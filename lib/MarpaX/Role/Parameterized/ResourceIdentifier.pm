@@ -145,57 +145,49 @@ SLIF
       # No escape/unescape in output - at the most we decode the input
       #
       $args2array_sub = sub {
-        #
-        # $self is a MooX::Struct
-        #
         my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
         my $rc = [ ('') x _MAX ];
+
         foreach (@args) {
-          #
-          # When it is not an array ref, it is a lexeme
-          #
           if (! ArrayRef->check($_)) {
-            $rc->[RAW] .= $_;
             #
-            # And there is a special lexeme: pct_encoded
+            # This is a lexeme
+            #
+            $rc->[RAW] .= $_, $rc->[NORMALIZED_RAW] .= $_;
+            #
+            # Otherwise eventually unescape what is in the %HH format
             #
             if ($lhs eq $pct_encoded) {
               my $octets = '';
               while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
               $_ = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
             }
-            $rc->[ESCAPED]              .= $_;
-            $rc->[UNESCAPED]            .= $_
+            $rc->[UNESCAPED] .= $_, $rc->[NORMALIZED_UNESCAPED] .= $_,
+            $rc->[ESCAPED]   .= $_, $rc->[NORMALIZED_ESCAPED]   .= $_
           } else {
-            $rc->[RAW]                  .= $_->[RAW];
-            $rc->[ESCAPED]              .= $_->[ESCAPED];
-            $rc->[UNESCAPED]            .= $_->[UNESCAPED]
+            #
+            # This has already been transformed in the previous step
+            #
+            $rc->[RAW]       .= $_->[RAW],       $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW],
+            $rc->[UNESCAPED] .= $_->[UNESCAPED], $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
+            $rc->[ESCAPED]   .= $_->[ESCAPED],   $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED]
           }
         }
-        $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[RAW]);
-        $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[ESCAPED]);
-        $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[UNESCAPED]);
+        #
+        # Apply normalization
+        #
+        $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
+        $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
+        $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
         $rc
       }
     } else {
       my $reserved_regexp = $BNF{reserved};
       my $unreserved_regexp = $BNF{unreserved};
-      #
-      # We escape a character only if it is not in the reserved set, nor in the unreserved set,
-      # i.e. we can use a single regexp: ! (reserved or unreserved)
-      #
-      # From implementation point of view:
-      # - If a lexeme matches something not in the "reserved" set, then it is not a component/sub-component
-      #   delimiter. Then anything not in the "unreserved" set is escaped.
-      #
-      my $character_not_to_escape = qr/(?:$reserved_regexp|$unreserved_regexp)/;
-        use Data::Dumper;
       $args2array_sub = sub {
         my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
         my $rc = [ ('') x _MAX ];
-        #
-        # A priori, a concatenation of normalized value do not need to be normalized again
-        #
+
         foreach (@args) {
           if (! ArrayRef->check($_)) {
             #
@@ -253,7 +245,7 @@ SLIF
         $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
         $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
         $rc
-      };
+      }
     }
     #
     # Generate default action
