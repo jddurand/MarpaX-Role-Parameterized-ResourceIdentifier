@@ -197,27 +197,31 @@ SLIF
         # A priori, a concatenation of normalized value do not need to be normalized again
         #
         foreach (@args) {
-          #
-          # When it is not an array ref, it is a lexeme
-          #
           if (! ArrayRef->check($_)) {
+            #
+            # This is a lexeme
+            #
             $rc->[RAW] .= $_, $rc->[NORMALIZED_RAW] .= $_;
-            #
-            # And there is a special lexeme: pct_encoded
-            #
-            if ($lhs eq $pct_encoded) {
-              my $octets = '';
-              while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
-              $_ = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
-            }
-            #
-            # Unescaped is per def the current input, eventually percent decoded
-            #
-            my ($unescaped, $escaped) = ($_, '');
-            foreach (split(//, $_)) {
-              if ($_ =~ $reserved_regexp) {
-                $escaped .= $_
-              } else {
+            if ($_ =~ $reserved_regexp) {
+              #
+              # If this matches the reserved character set: keep it
+              #
+              $rc->[UNESCAPED] .= $_, $rc->[NORMALIZED_UNESCAPED] .= $_,
+              $rc->[ESCAPED]   .= $_, $rc->[NORMALIZED_ESCAPED]   .= $_
+            } else {
+              #
+              # Otherwise eventually unescape what is in the %HH format
+              #
+              if ($lhs eq $pct_encoded) {
+                my $octets = '';
+                while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+                $_ = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
+              }
+              my ($unescaped, $escaped) = ($_, '');
+              #
+              # And escape everything that is not an unreserved character
+              #
+              foreach (split(//, $_)) {
                 if ($_ =~ $unreserved_regexp) {
                   $escaped .= $_
                 } else {
@@ -230,15 +234,21 @@ SLIF
                   }
                 }
               }
+              $rc->[UNESCAPED] .= $unescaped,      $rc->[NORMALIZED_UNESCAPED] .= $unescaped,
+              $rc->[ESCAPED]   .= $escaped,        $rc->[NORMALIZED_ESCAPED]   .= $escaped
             }
-            $rc->[UNESCAPED] .= $unescaped,      $rc->[NORMALIZED_UNESCAPED] .= $unescaped,
-            $rc->[ESCAPED]   .= $escaped,        $rc->[NORMALIZED_ESCAPED]   .= $escaped
           } else {
+            #
+            # This has already been transformed in the previous step
+            #
             $rc->[RAW]       .= $_->[RAW],       $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW],
             $rc->[UNESCAPED] .= $_->[UNESCAPED], $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
             $rc->[ESCAPED]   .= $_->[ESCAPED],   $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED]
           }
         }
+        #
+        # Apply normalization
+        #
         $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
         $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
         $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
