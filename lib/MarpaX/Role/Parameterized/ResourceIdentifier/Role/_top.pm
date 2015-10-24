@@ -54,28 +54,22 @@ sub _BUILDARGS {
   # - encoding        Str (encoding)
   # - decode_strategy Maybe[Int] (decode option)
   # It may also have:
-  # - idn             Maybe[Bool]
-  # - nfc             Maybe[Bool]
+  # - idn
+  # - nfc
+  # - ... whatever - it is kepts as it
   #
   my $input;
-  my $nfc;
-  my $idn;
+  my %rest = ();
   if (HashRef->check($first)) {
     croak 'octets key must exist' if (! exists($first->{octets}));
     croak 'encoding key must exist' if (! exists($first->{encoding}));
 
-    my ($encoding, $bytes, $decode_strategy, $nfc, $idn) = $check2->(
-                                                                     $first->{encoding},
-                                                                     $first->{octets},
-                                                                     $first->{decode_strategy},
-                                                                     $first->{nfc},
-                                                                     $first->{idn},
-                                                                    );
-    #
-    # Default, is not provided, is FB_CROAK
-    #
-    $decode_strategy //= Encode::FB_CROAK;
-    $input = decode($encoding, $bytes, $decode_strategy);
+    my $octets          = delete($first->{octets});
+    my $encoding        = delete($first->{encoding});
+    my $decode_strategy = delete($first->{decode_strategy}) // Encode::FB_CROAK;
+    %rest = %{$first};
+
+    $input = decode($encoding, $octets, $decode_strategy);
   } else {
     $input = "$first";  # Eventual stringification
   }
@@ -87,7 +81,7 @@ sub _BUILDARGS {
   $input =~ s/^"(.*)"$/$1/;
   $input =~ s/^\s+//;
   $input =~ s/\s+$//;
-  my $args = { input => $input, nfc=> $nfc, idn => $idn };
+  my $args = { input => $input, %rest };
   $args->{scheme} = $scheme if (! Undef->check($scheme));
   #
   # Return arguments in a hash ref a per the spec
