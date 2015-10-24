@@ -311,21 +311,6 @@ SLIF
     }
     install_modifier($package, 'fresh', $default_action, $default_action_sub);
 
-    my $reserved = $BNF{reserved};
-    my $can = $package->can('escape');
-    if (RegexpRef->check($reserved)) {
-      if ($can) {
-        install_modifier($package, 'around', 'escape', sub { $_[1]->percent_encode($_[2], $reserved) });
-      } else {
-        install_modifier($package, 'fresh', 'escape', sub { $_[0]->percent_encode($_[1], $reserved) });
-      }
-    } else {
-      if ($can) {
-        install_modifier($package, 'around', 'escape', sub { $_[2] } );
-      } else {
-        install_modifier($package, 'fresh', 'escape', sub { $_[1] } );
-      }
-    }
   }
 };
 
