@@ -95,7 +95,9 @@ role {
   # Sanity checks on params
   # -----------------------
   my %PARAMS = ();
-  map { $PARAMS{$_} = $params->{$_} } qw/type bnf_package normalizer/;
+  map { $PARAMS{$_} = $params->{$_} } qw/whoami type bnf_package normalizer/;
+
+  my $whoami = $PARAMS{whoami};
 
   croak 'type must exist and do Enum[qw/Common Generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/Common Generic/;
   my $type = $PARAMS{type};
@@ -175,12 +177,8 @@ role {
   # Injections
   # ----------
   #
-
-  use Devel::StackTrace;
-  my $stacktrace = Devel::StackTrace->new();
-  print STDERR "\nHERE\n" . $stacktrace->as_string;
-  method grammar => sub { $BNF{grammar} };
-  method bnf     => sub { $BNF{bnf} };
+  install_modifier($whoami, 'fresh', grammar => sub { $BNF{grammar} });
+  install_modifier($whoami, 'fresh', bnf => sub { $BNF{bnf} });
   my $max = _COUNT - 1;
   my %recognizer_option = (
                            trace_terminals =>  $setup->marpa_trace_terminals,
@@ -239,7 +237,7 @@ role {
       return
     }
   };
-  method _trigger__input => $trigger_input{$PARAMS{type}};
+  install_modifier($whoami, 'fresh', _trigger__input => $trigger_input{$PARAMS{type}});
   #
   # ------------------------
   # Parsing internal methods
@@ -364,56 +362,58 @@ role {
   #
   my $default_action_sub;
   my %MAPPING = %{$BNF{mapping}};
-  method $action_name => sub {
-    my ($self, @args) = @_;
-    my $slg         = $Marpa::R2::Context::slg;
-    my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-    $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-    my $array_ref = &$args2array_sub($self, $lhs, @args);
-    my $structs = $self->_structs;
-    my $field = $MAPPING{$lhs};
-    if (defined($field)) {
-      #
-      # Segments is special
-      #
-      if ($field eq 'segments') {
-        push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$max);
-      } else {
-        $structs->[$_]->$field($array_ref->[$_]) for (0..$max);
-      }
-    }
-    $array_ref
-  };
+  install_modifier($whoami, 'fresh', $action_name => sub {
+                     my ($self, @args) = @_;
+                     my $slg         = $Marpa::R2::Context::slg;
+                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+                     my $array_ref = &$args2array_sub($self, $lhs, @args);
+                     my $structs = $self->_structs;
+                     my $field = $MAPPING{$lhs};
+                     if (defined($field)) {
+                       #
+                       # Segments is special
+                       #
+                       if ($field eq 'segments') {
+                         push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$max);
+                       } else {
+                         $structs->[$_]->$field($array_ref->[$_]) for (0..$max);
+                       }
+                     }
+                     $array_ref
+                   }
+                  );
   #
   # For every structure field, we inject a method with an underscore in it
   # Optional indice is which version we want, defaulting to NORMALIZED_UNESCAPED
   #
   foreach (@fields) {
-    method "_$_" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->_output }
+    install_modifier($whoami, 'fresh', "_$_" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->_output });
   }
   #
   # Put helpers
   #
-  method _indice__count               => sub { _COUNT               };
-  method _indice__max                 => sub { $max                 };
-  method _indice_raw                  => sub { RAW                  };
-  method _indice_escaped              => sub { ESCAPED              };
-  method _indice_unescaped            => sub { UNESCAPED            };
-  method _indice_normalized_raw       => sub { NORMALIZED_RAW       };
-  method _indice_normalized_escaped   => sub { NORMALIZED_ESCAPED   };
-  method _indice_normalized_unescaped => sub { NORMALIZED_UNESCAPED };
-  method _indice_description          => sub { # my ($self, $indice) = @_;
-    return 'Invalid indice' if ! defined($_[1]);
-    if    ($_[1] == RAW                  ) { return 'Raw value'                  }
-    elsif ($_[1] == ESCAPED              ) { return 'Escaped value'              }
-    elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value'            }
-    elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value'       }
-    elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value'   }
-    elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
-    else                                   { return 'Unknown indice'             }
-  }
+  install_modifier($whoami, 'fresh', _indice__count               => sub { _COUNT               });
+  install_modifier($whoami, 'fresh', _indice__max                 => sub { $max                 });
+  install_modifier($whoami, 'fresh', _indice_raw                  => sub { RAW                  });
+  install_modifier($whoami, 'fresh', _indice_escaped              => sub { ESCAPED              });
+  install_modifier($whoami, 'fresh', _indice_unescaped            => sub { UNESCAPED            });
+  install_modifier($whoami, 'fresh', _indice_normalized_raw       => sub { NORMALIZED_RAW       });
+  install_modifier($whoami, 'fresh', _indice_normalized_escaped   => sub { NORMALIZED_ESCAPED   });
+  install_modifier($whoami, 'fresh', _indice_normalized_unescaped => sub { NORMALIZED_UNESCAPED });
+  install_modifier($whoami, 'fresh', _indice_description          => sub {
+                     # my ($self, $indice) = @_;
+                     return 'Invalid indice' if ! defined($_[1]);
+                     if    ($_[1] == RAW                  ) { return 'Raw value'                  }
+                     elsif ($_[1] == ESCAPED              ) { return 'Escaped value'              }
+                     elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value'            }
+                     elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value'       }
+                     elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value'   }
+                     elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
+                     else                                   { return 'Unknown indice'             }
+                   }
+                  )
 };
-
 #
 # Class methods common to any Resource Identifier
 #
