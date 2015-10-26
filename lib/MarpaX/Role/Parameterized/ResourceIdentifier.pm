@@ -9,10 +9,18 @@ package MarpaX::Role::Parameterized::ResourceIdentifier;
 
 # AUTHORITY
 
+#
+# This is a parameterized role because RFC3986 and RFC3987 share exactly the same
+# implementation. The only difference is the grammar. This role will take a grammar
+# as target package and generate the action, the internal structure and the required
+# methods.
+#
+
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
+use Data::Dumper;
 use Encode qw//;
-use Import::Into;
+require UNIVERSAL::DOES unless defined &UNIVERSAL::DOES;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
 use Marpa::R2;
@@ -20,13 +28,14 @@ use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Role::BNF;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
-use MooX::Role::Logger;
-use MooX::Role::Parameterized;
-use Role::Tiny;
 use Types::Standard -all;
-use Type::Params qw/compile/;
+use Role::Tiny;
+use constant {
+  BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BNF'
+};
 use constant {
   RAW                  => 0,
   ESCAPED              => 1,
@@ -36,282 +45,372 @@ use constant {
   NORMALIZED_UNESCAPED => 5,
   _COUNT               => 6
 };
-my $action_count = 0;
-our $grammars    = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
-our $setup       = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
+
+our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
+our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
+
+has _input   => ( is => 'rw', isa => Str, trigger => 1);
+has _structs => ( is => 'rw', isa => ArrayRef[Object] );
+
+use MooX::Role::Parameterized;
+    use MooX::Struct -rw,
+      Common => [ output        => [ isa => Str,           default => sub {    '' } ], # Parse tree value
+                  scheme        => [ isa => Str|Undef,     default => sub { undef } ],
+                  opaque        => [ isa => Str,           default => sub {    '' } ],
+                  fragment      => [ isa => Str|Undef,     default => sub { undef } ],
+                ];
+    use MooX::Struct -rw,
+      Generic => [ output        => [ isa => Str,           default => sub {    '' } ], # Parse tree value
+                   scheme        => [ isa => Str|Undef,     default => sub { undef } ],
+                   fragment      => [ isa => Str|Undef,     default => sub { undef } ],
+                   hier_part     => [ isa => Str|Undef,     default => sub { undef } ],
+                   query         => [ isa => Str|Undef,     default => sub { undef } ],
+                   segment       => [ isa => Str|Undef,     default => sub { undef } ],
+                   authority     => [ isa => Str|Undef,     default => sub { undef } ],
+                   path          => [ isa => Str|Undef,     default => sub { undef } ],
+                   path_abempty  => [ isa => Str|Undef,     default => sub { undef } ],
+                   path_absolute => [ isa => Str|Undef,     default => sub { undef } ],
+                   path_noscheme => [ isa => Str|Undef,     default => sub { undef } ],
+                   path_rootless => [ isa => Str|Undef,     default => sub { undef } ],
+                   path_empty    => [ isa => Str|Undef,     default => sub { undef } ],
+                   relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
+                   relative_part => [ isa => Str|Undef,     default => sub { undef } ],
+                   userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
+                   host          => [ isa => Str|Undef,     default => sub { undef } ],
+                   port          => [ isa => Str|Undef,     default => sub { undef } ],
+                   ip_literal    => [ isa => Str|Undef,     default => sub { undef } ],
+                   ipv4_address  => [ isa => Str|Undef,     default => sub { undef } ],
+                   reg_name      => [ isa => Str|Undef,     default => sub { undef } ],
+                   ipv6_address  => [ isa => Str|Undef,     default => sub { undef } ],
+                   ipv6_addrz    => [ isa => Str|Undef,     default => sub { undef } ],
+                   ipvfuture     => [ isa => Str|Undef,     default => sub { undef } ],
+                   zoneid        => [ isa => Str|Undef,     default => sub { undef } ],
+                   segments      => [ isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
+                 ];
 
 role {
   my $params = shift;
 
+  # -----------------------
+  # Sanity checks on params
+  # -----------------------
+  my %PARAMS = ();
+  map { $PARAMS{$_} = $params->{$_} } qw/type bnf_package normalizer/;
+
+  croak 'type must exist and do Enum[qw/Common Generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/Common Generic/;
+  my $type = $PARAMS{type};
+  croak "[$type] bnf_package must exist and do Str"               unless Str->check                     ($PARAMS{bnf_package});
+  croak "[$type] normalizer must exist and do CodeRef"            unless CodeRef->check                 ($PARAMS{normalizer});
+
+  my $bnf_package = $PARAMS{bnf_package};
+  use_module($bnf_package);
+  my $normalizer  = $PARAMS{normalizer};
+
+  # ----------------------------
+  # Sanity checks on bnf_package
+  # ----------------------------
+  my $bnf_instance = $PARAMS{bnf_package}->new();
+  Role::Tiny->apply_roles_to_object($bnf_instance, BNF_ROLE) unless does($bnf_instance, BNF_ROLE);
   #
-  # Sanity check
-  # ------------
-  foreach (qw/BNF_package package normalizer/) {
-    if ($_ eq 'normalizer') {
-      croak "$_ must do CodeRef" unless exists($params->{$_}) && CodeRef->check($params->{$_});
-    } else {
-      croak "$_ must exist and do Str" unless exists($params->{$_}) && Str->check($params->{$_});
-    }
-  }
-
-  my $BNF_package       = $params->{BNF_package};
-  my $package           = $params->{package};
-  my $normalizer        = $params->{normalizer};
-
-  use_module($BNF_package);
-  my $BNF_instance      = $BNF_package->new;
-
+  # Make sure bnf instance really return what we want
+  #
   my %BNF = ();
-  foreach (qw/start_symbol bnf pct_encoded utf8_octets reserved unreserved/) {
-    $BNF{$_} = $BNF_instance->$_;
-    if ($_ eq 'pct_encoded') {
-      croak "$BNF_package->$_ must do Str or Undef" unless Str->check($BNF{$_}) || Undef->check($BNF{$_});
-    } elsif ($_ eq 'utf8_octets') {
-      croak "$BNF_package->$_ must do Bool or Undef" unless Bool->check($BNF{$_}) || Undef->check($BNF{$_});
-    } elsif (($_ eq 'reserved') || ($_ eq 'unreserved')) {
-      croak "$BNF_package->$_ must do RegexpRef or Undef" unless RegexpRef->check($BNF{$_}) || Undef->check($BNF{$_});
-    } else {
-      croak "$BNF_package->$_ must do Str" unless Str->check($BNF{$_});
-    }
-  }
+  map { $BNF{$_} = $bnf_instance->$_} qw/grammar bnf reserved unreserved pct_encoded is_utf8 mapping action_name/;
+  croak "[$type] $bnf_package->grammar must do InstanceOf['Marpa::R2::Scanless::G']"  unless blessed($BNF{grammar}) && blessed($BNF{grammar}) eq 'Marpa::R2::Scanless::G';
+  croak "[$type] $bnf_package->bnf must do Str"                    unless Str->check($BNF{bnf});
+  croak "[$type] $bnf_package->reserved must do RegexpRef|Undef"   unless RegexpRef->check($BNF{reserved}) || Undef->check($BNF{reserved});
+  croak "[$type] $bnf_package->unreserved must do RegexpRef|Undef" unless RegexpRef->check($BNF{unreserved}) || Undef->check($BNF{unreserved});
+  croak "[$type] $bnf_package->pct_encoded must do Str|Undef"      unless Str->check($BNF{pct_encoded}) || Undef->check($BNF{pct_encoded});
+  croak "[$type] $bnf_package->is_utf8 must do Bool"               unless Bool->check($BNF{is_utf8});
+  croak "[$type] $bnf_package->mapping must do Hashref[Str]"       unless HashRef->check($BNF{mapping}) && ! grep { ! Str->check($_) } keys %{$BNF{mapping}};
+  croak "[$type] $bnf_package->pct_encoded must be like <...>'"    unless (! defined($BNF{pct_encoded})) || $BNF{pct_encoded} =~ /^<.*>$/;
   #
-  # Extra protection: if reserved is a RegexpRef, then unreserved must be a RegexpRef
+  # If reserved is a RegexpRef, then unreserved must be a RegexpRef
   #
   if (RegexpRef->check($BNF{reserved})) {
-    croak "$BNF_package->unreserved must do RegexpRef" unless RegexpRef->check($BNF{unreserved});
-  }
-
-  croak "$BNF_package->bnf cannot have 'inaccessible is' (even if commented)" if $BNF{bnf} =~ /\binaccessible\s+is\b/;
-  croak "$BNF_package->bnf cannot have 'action =>' (even if commented)"       if $BNF{bnf} =~ /\baction\s+=>/;
-
-  foreach (qw/start_symbol pct_encoded/) {
-    next if Undef->check($BNF{$_}); # Can happen only for pct_encoded
-    $BNF{$_} = '<' . $BNF{$_} . '>' if substr($BNF{$_}, 0, 1) ne '<';
-  }
-
-  croak 'G1 parameters must exist'                                            if (! exists $params->{G1});
-  croak 'G1 reference type must be HASH'                                      unless does $params->{G1}, 'HASH';
-
-  my %G1 = ();
-  foreach (keys %{$params->{G1}}) {
-    # Every key must start with '<' and the value do CODE
-    croak "G1 $_ must be in the form <...>" unless substr($_, 0, 1) eq '<';
-    croak "G1 $_ value must do CODE" unless does $params->{G1}->{$_}, 'CODE';
-    $G1{$_} = $params->{G1}->{$_};
-    croak 'G1 HASH must not contain an entry for $BNF{pct_encoded}'           if Str->check($BNF{pct_encoded}) && $_ eq $BNF{pct_encoded};
-    croak 'G1 HASH must not contain an entry for $BNF{start_symbol}'          if $_ eq $BNF{start_symbol};
+    croak "[$type] $bnf_package->unreserved must do RegexpRef when $bnf_package->reserved does RegexpRef" unless RegexpRef->check($BNF{unreserved});
   }
   #
-  # Good, we can generate code and produce grammar singletons for start
-  # -------------------------------------------------------------------
+  # A bnf package must provide correspondance between grammar symbols and the fields in the structure
+  # A field can appear more than once as a value, but its semantic is fixed by us.
+  # A symbol must be like <...>
+  #
+  my $common_class;
+  my $generic_class;
+  eval q{
+  };
+
+  my %fields = ();
+  my @fields = ($type eq 'Common') ? Common->FIELDS : Generic->FIELDS;
+  map { $fields{$_} = 0 } @fields;
+  foreach (keys %{$BNF{mapping}}) {
+    my $field = $BNF{mapping}->{$_};
+    croak "[$type] mapping $_ must be like <...>" unless $_ =~ /^<.*>$/;
+    croak "[$type] mapping of $_ is unknown field: $field" unless exists $fields{$field};
+    $fields{$field}++;
+  }
+  my @not_found = grep { ! $fields{$_} } keys %fields;
+  croak "[$type] Unmapped fields: @not_found" unless ! @not_found;
+
+  my $reserved    = $BNF{reserved};
+  my $unreserved  = $BNF{unreserved};
+  my $pct_encoded = $BNF{pct_encoded} // '';
+  my $is_utf8     = $BNF{is_utf8};
+  my $action_name = $BNF{action_name};
+
+  #
+  # -------
+  # Logging
+  # -------
   #
   # In any case, we want Marpa to be "silent", unless explicitely traced
   #
   my $trace;
-  open(my $trace_file_handle, ">", \$trace) || croak "Cannot open trace filehandle, $!";
+  open(my $trace_file_handle, ">", \$trace) || croak "[$type] Cannot open trace filehandle, $!";
   if ($setup->marpa_trace) {
-    local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::BNF_PACKAGE = $BNF_package;
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $PARAMS{bnf_package};
     tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   }
-  {
-    my $start_symbol       = $BNF{start_symbol};
-    my $default_action     = sprintf('__action%04d', ++$action_count);
-    my $slif           = <<SLIF;
-inaccessible is ok by default
-:start ::= $start_symbol
-:default ::= action => ${package}::$default_action
-$BNF{bnf}
-SLIF
-    #
-    # Compile and save grammar.
-    #
-    # It is the deepest package that will win, but every layer (common, generic, specific) has its own grammar linked to a MooX::Struct.
-    # And we will use this sub-grammar to fill such MooX::Struct. This is why we use a singleton to recover from
-    # the different layers.
-    #
-    my $grammar = Marpa::R2::Scanless::G->new({source => \$slif, trace_file_handle => $trace_file_handle});
-    $grammars->set_grammar($package, $grammar);
-    #
-    # It is very important to remember the meaning of indices:
-    # --------------------------------------------------------
-    # 0 = escaped
-    # 1 = unescaped
-    # 2 = raw
-    # 3 = normalized escaped
-    # 4 = normalized unescaped
-    # 5 = normalized raw
-    #
-    my $args2array_sub;
-    if (Undef->check($BNF{reserved})) {
-      #
-      # No escape/unescape in output - at the most we decode the input
-      #
-      $args2array_sub = sub {
-        my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
-        my $rc = [ ('') x _COUNT ];
+  # ----------
+  # Injections
+  # ----------
+  #
 
-        foreach (@args) {
-          if (! ArrayRef->check($_)) {
+  use Devel::StackTrace;
+  my $stacktrace = Devel::StackTrace->new();
+  print STDERR "\nHERE\n" . $stacktrace->as_string;
+  method grammar => sub { $BNF{grammar} };
+  method bnf     => sub { $BNF{bnf} };
+  my $max = _COUNT - 1;
+  my %recognizer_option = (
+                           trace_terminals =>  $setup->marpa_trace_terminals,
+                           trace_values =>  $setup->marpa_trace_values,
+                           ranking_method => 'high_rule_only',
+                           grammar => $BNF{grammar}
+                          );
+  my %trigger_input = ();
+  $trigger_input{Common} = sub {
+    my ($self, $input) = @_;
+    my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+    try {
+      $r->read(\$input);
+      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
+      $self->_structs([(Common->new) x _COUNT]);
+      $r->value($self);
+      if ($setup->marpa_trace) {
+        foreach (0..$max) {
+          my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [$self->_indice_description($_)]);
+          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $d->Dump);
+        }
+      }
+    } catch {
+      if ($setup->marpa_trace) {
+        foreach (split(/\n/, $_)) {
+          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $_)
+        }
+      }
+      return
+    }
+  };
+  my $trigger_input_Common = $trigger_input{Common};
+  $trigger_input{Generic} = sub {
+    my ($self, $input) = @_;
+    my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+    try {
+      $r->read(\$input);
+      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
+      $self->_structs([(Generic->new) x _COUNT]);
+      $r->value($self);
+      if ($setup->marpa_trace) {
+        foreach (0..$max) {
+          my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [$self->_indice_description($_)]);
+          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $d->Dump);
+        }
+      }
+    } catch {
+      if ($setup->marpa_trace) {
+        foreach (split(/\n/, $_)) {
+          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $_)
+        }
+      }
+      if ($setup->uri_compat) {
+        $self->$trigger_input_Common($input)
+      }
+      return
+    }
+  };
+  method _trigger__input => $trigger_input{$PARAMS{type}};
+  #
+  # ------------------------
+  # Parsing internal methods
+  # ------------------------
+  #
+  # It is very important to remember the meaning of indices:
+  # 0 = escaped
+  # 1 = unescaped
+  # 2 = raw
+  # 3 = normalized escaped
+  # 4 = normalized unescaped
+  # 5 = normalized raw
+  #
+  my $args2array_sub;
+  if (Undef->check($reserved)) {
+    #
+    # No escape/unescape in output - at the most we decode the input
+    #
+    $args2array_sub = sub {
+      my ($self, $lhs, @args) = @_;
+      my $rc = [ ('') x _COUNT ];
+
+      foreach (@args) {
+        if (! ref) { # I could have said ArrayRef->check($_)
+          #
+          # This is a lexeme
+          #
+          $rc->[RAW] .= $_, $rc->[NORMALIZED_RAW] .= $_;
+          #
+          # Eventually unescape what is in the %HH format
+          #
+          if ($lhs eq $pct_encoded) {
+            my $octets = '';
+            while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
+            $_ = $is_utf8 ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
+          }
+          $rc->[UNESCAPED] .= $_, $rc->[NORMALIZED_UNESCAPED] .= $_,
+          $rc->[ESCAPED]   .= $_, $rc->[NORMALIZED_ESCAPED]   .= $_
+        } else {
+          #
+          # This has already been transformed in the previous step
+          #
+          $rc->[RAW]       .= $_->[RAW],       $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW],
+          $rc->[UNESCAPED] .= $_->[UNESCAPED], $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
+          $rc->[ESCAPED]   .= $_->[ESCAPED],   $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED]
+        }
+      }
+      #
+      # Apply normalization
+      #
+      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
+      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
+      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
+      $rc
+    }
+  } else {
+    $args2array_sub = sub {
+      my ($self, $lhs, @args) = @_;
+      my $rc = [ ('') x _COUNT ];
+
+      foreach (@args) {
+        if (! ref) { # I could have said ArrayRef->check($_)
+          #
+          # This is a lexeme
+          #
+          $rc->[RAW] .= $_, $rc->[NORMALIZED_RAW] .= $_;
+          if ($_ =~ $reserved) {
             #
-            # This is a lexeme
+            # If this matches the reserved character set: keep it
             #
-            $rc->[RAW] .= $_, $rc->[NORMALIZED_RAW] .= $_;
+            $rc->[UNESCAPED] .= $_, $rc->[NORMALIZED_UNESCAPED] .= $_,
+            $rc->[ESCAPED]   .= $_, $rc->[NORMALIZED_ESCAPED]   .= $_
+          } else {
             #
             # Otherwise eventually unescape what is in the %HH format
             #
             if ($lhs eq $pct_encoded) {
               my $octets = '';
               while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
-              $_ = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
+              $_ = $is_utf8 ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
             }
-            $rc->[UNESCAPED] .= $_, $rc->[NORMALIZED_UNESCAPED] .= $_,
-            $rc->[ESCAPED]   .= $_, $rc->[NORMALIZED_ESCAPED]   .= $_
-          } else {
+            my ($unescaped, $escaped) = ($_, '');
             #
-            # This has already been transformed in the previous step
+            # And escape everything that is not an unreserved character
             #
-            $rc->[RAW]       .= $_->[RAW],       $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW],
-            $rc->[UNESCAPED] .= $_->[UNESCAPED], $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
-            $rc->[ESCAPED]   .= $_->[ESCAPED],   $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED]
-          }
-        }
-        #
-        # Apply normalization
-        #
-        $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
-        $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
-        $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
-        $rc
-      }
-    } else {
-      my $reserved_regexp = $BNF{reserved};
-      my $unreserved_regexp = $BNF{unreserved};
-      $args2array_sub = sub {
-        my ($self, $lhs, $pct_encoded, $utf8_octets, @args) = @_;
-        my $rc = [ ('') x _COUNT ];
-
-        foreach (@args) {
-          if (! ArrayRef->check($_)) {
-            #
-            # This is a lexeme
-            #
-            $rc->[RAW] .= $_, $rc->[NORMALIZED_RAW] .= $_;
-            if ($_ =~ $reserved_regexp) {
-              #
-              # If this matches the reserved character set: keep it
-              #
-              $rc->[UNESCAPED] .= $_, $rc->[NORMALIZED_UNESCAPED] .= $_,
-              $rc->[ESCAPED]   .= $_, $rc->[NORMALIZED_ESCAPED]   .= $_
-            } else {
-              #
-              # Otherwise eventually unescape what is in the %HH format
-              #
-              if ($lhs eq $pct_encoded) {
-                my $octets = '';
-                while (m/(?<=%)[^%]+/gp) { $octets .= chr(hex(${^MATCH})) }
-                $_ = $utf8_octets ? MarpaX::RFC::RFC3629->new($octets)->output : $octets
-              }
-              my ($unescaped, $escaped) = ($_, '');
-              #
-              # And escape everything that is not an unreserved character
-              #
-              foreach (split(//, $_)) {
-                if ($_ =~ $unreserved_regexp) {
-                  $escaped .= $_
-                } else {
-                  $escaped .= do {
-                    #
-                    # Because Encode::encode does not like read-only values
-                    #
-                    my $character = $_;
-                    join('', map { '%' . uc(unpack('H2', $_)) } split(//, Encode::encode('UTF-8', $character, Encode::FB_CROAK)))
-                  }
+            foreach (split(//, $_)) {
+              if ($_ =~ $unreserved) {
+                $escaped .= $_
+              } else {
+                $escaped .= do {
+                  #
+                  # Because Encode::encode does not like read-only values
+                  #
+                  my $character = $_;
+                  join('', map { '%' . uc(unpack('H2', $_)) } split(//, Encode::encode('UTF-8', $character, Encode::FB_CROAK)))
                 }
               }
-              $rc->[UNESCAPED] .= $unescaped, $rc->[NORMALIZED_UNESCAPED] .= $unescaped,
-              $rc->[ESCAPED]   .= $escaped,   $rc->[NORMALIZED_ESCAPED]   .= $escaped
             }
-          } else {
-            #
-            # This has already been transformed in the previous step
-            #
-            $rc->[RAW]       .= $_->[RAW],       $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW],
-            $rc->[UNESCAPED] .= $_->[UNESCAPED], $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
-            $rc->[ESCAPED]   .= $_->[ESCAPED],   $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED]
+            $rc->[UNESCAPED] .= $unescaped, $rc->[NORMALIZED_UNESCAPED] .= $unescaped,
+            $rc->[ESCAPED]   .= $escaped,   $rc->[NORMALIZED_ESCAPED]   .= $escaped
           }
+        } else {
+          #
+          # This has already been transformed in the previous step
+          #
+          $rc->[RAW]       .= $_->[RAW],       $rc->[NORMALIZED_RAW]       .= $_->[NORMALIZED_RAW],
+          $rc->[UNESCAPED] .= $_->[UNESCAPED], $rc->[NORMALIZED_UNESCAPED] .= $_->[NORMALIZED_UNESCAPED],
+          $rc->[ESCAPED]   .= $_->[ESCAPED],   $rc->[NORMALIZED_ESCAPED]   .= $_->[NORMALIZED_ESCAPED]
         }
-        #
-        # Apply normalization
-        #
-        $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
-        $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
-        $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
-        $rc
+      }
+      #
+      # Apply normalization
+      #
+      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
+      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
+      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
+      $rc
+    }
+  }
+  #
+  # Generate default action
+  #
+  my $default_action_sub;
+  my %MAPPING = %{$BNF{mapping}};
+  method $action_name => sub {
+    my ($self, @args) = @_;
+    my $slg         = $Marpa::R2::Context::slg;
+    my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+    $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+    my $array_ref = &$args2array_sub($self, $lhs, @args);
+    my $structs = $self->_structs;
+    my $field = $MAPPING{$lhs};
+    if (defined($field)) {
+      #
+      # Segments is special
+      #
+      if ($field eq 'segments') {
+        push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$max);
+      } else {
+        $structs->[$_]->$field($array_ref->[$_]) for (0..$max);
       }
     }
-    #
-    # Generate default action
-    #
-    my $default_action_sub;
-    my $pct_encoded = Str->check($BNF{pct_encoded}) ? $BNF{pct_encoded} : '';
-    my $utf8_octets = Bool->check($BNF{utf8_octets}) ? $BNF{utf8_octets} : 0;
-    my $max = _COUNT - 1;
-    if ($setup->with_logger) {
-      $default_action_sub = sub {
-        my ($self, @args) = @_;
-        my $slg         = $Marpa::R2::Context::slg;
-        my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-        #
-        # For simple symbols, symbol_display_form() removes the <>. Note that we enforced it upper, so we
-        # are safe to enforce it here, eventually.
-        #
-        $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-        #
-        # We always propagate only an ArrayRef containing a concatenation, except when
-        # $lhs is start_symbol, then we return $self.
-        #
-        # The indice 0 of the array ref contains the escaped string, and the rule is:
-        #   - for every character not in the reserved set, escape any character not in the unreserved set
-        #
-        # The indice 1 of the array ref contains the unescaped string: this is just a
-        # concatenation of what came in, but AFTER eventual percent decoding
-        #
-        # The indice 2 of the array ref contains the raw string: per def this will be equivalent to input
-        #
-        # The indice 3 contains the normalized escaped string
-        # The indice 4 contains the normalized unescaped string
-        # The indice 5 contains the normalized raw string
-        #
-        my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
-        my $is_start_symbol = $lhs eq $BNF{start_symbol};
-        my $structs = $self->_structs;
-        do { $G1{$lhs}->($structs->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
-        do {     $structs->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
-        {
-          local $\;
-          $self->_logger->tracef('%s: %-30s ::= %s (%s --> %s)', $BNF_package, $lhs, \@rhs, \@args, $rc);
-        }
-        $is_start_symbol ? $self : $rc
-      }
-    } else {
-      #
-      # Version without logging
-      #
-      $default_action_sub = sub {
-        my ($self, @args) = @_;
-        my $slg         = $Marpa::R2::Context::slg;
-        my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-        $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-        my $rc = &$args2array_sub($self, $lhs, $pct_encoded, $utf8_octets, @args);
-        my $is_start_symbol = $lhs eq $BNF{start_symbol};
-        my $structs = $self->_structs;
-        do { $G1{$lhs}->($structs->[$_], $rc->[$_]) for (0..$max) } if exists $G1{$lhs};
-        do {     $structs->[$_]->_output($rc->[$_]) for (0..$max) } if $is_start_symbol;
-        $is_start_symbol ? $self : $rc
-      }
-    }
-    install_modifier($package, 'fresh', $default_action, $default_action_sub);
-
+    $array_ref
+  };
+  #
+  # For every structure field, we inject a method with an underscore in it
+  # Optional indice is which version we want, defaulting to NORMALIZED_UNESCAPED
+  #
+  foreach (@fields) {
+    method "_$_" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->_output }
+  }
+  #
+  # Put helpers
+  #
+  method _indice__count               => sub { _COUNT               };
+  method _indice__max                 => sub { $max                 };
+  method _indice_raw                  => sub { RAW                  };
+  method _indice_escaped              => sub { ESCAPED              };
+  method _indice_unescaped            => sub { UNESCAPED            };
+  method _indice_normalized_raw       => sub { NORMALIZED_RAW       };
+  method _indice_normalized_escaped   => sub { NORMALIZED_ESCAPED   };
+  method _indice_normalized_unescaped => sub { NORMALIZED_UNESCAPED };
+  method _indice_description          => sub { # my ($self, $indice) = @_;
+    return 'Invalid indice' if ! defined($_[1]);
+    if    ($_[1] == RAW                  ) { return 'Raw value'                  }
+    elsif ($_[1] == ESCAPED              ) { return 'Escaped value'              }
+    elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value'            }
+    elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value'       }
+    elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value'   }
+    elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
+    else                                   { return 'Unknown indice'             }
   }
 };
 
@@ -334,31 +433,7 @@ sub percent_encode {
     !egp;
   $encoded
 }
-#
-# Indice helpers
-#
-sub _indice_raw                  { RAW                  }
-sub _indice_escaped              { ESCAPED              }
-sub _indice_unescaped            { UNESCAPED            }
-sub _indice_normalized_raw       { NORMALIZED_RAW       }
-sub _indice_normalized_escaped   { NORMALIZED_ESCAPED   }
-sub _indice_normalized_unescaped { NORMALIZED_UNESCAPED }
 
-sub _indice_description {
-  my ($self, $indice) = @_;
-
-  if    ($indice == $self->_indice_raw)                  { return 'Raw value'                  }
-  elsif ($indice == $self->_indice_escaped)              { return 'Escaped value'              }
-  elsif ($indice == $self->_indice_unescaped)            { return 'Unescaped value'            }
-  elsif ($indice == $self->_indice_normalized_raw)       { return 'Normalized raw value'       }
-  elsif ($indice == $self->_indice_normalized_escaped)   { return 'Normalized escaped value'   }
-  elsif ($indice == $self->_indice_normalized_unescaped) { return 'Normalized unescaped value' }
-  else                                                   { return 'Unknown indice'             }
-}
-
-my $max = _COUNT - 1;
-sub _indice__count               { _COUNT               }
-sub _indice__max                 { $max                 }
 
 1;
 

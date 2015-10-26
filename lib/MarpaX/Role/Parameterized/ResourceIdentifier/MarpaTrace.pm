@@ -24,7 +24,7 @@ sub BEGIN {
 
 sub TIEHANDLE {
   my $class = shift;
-  my $category = $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::BNF_PACKAGE || __PACKAGE__;
+  my $category = $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package || __PACKAGE__;
   bless { category => $category, logger => Log::Any->get_logger(category => $category) }, $class;
 }
 
