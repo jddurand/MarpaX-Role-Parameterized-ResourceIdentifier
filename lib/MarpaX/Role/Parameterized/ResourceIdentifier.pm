@@ -43,11 +43,11 @@ use constant {
 };
 use constant {
   RAW                  => 0,
-  ESCAPED              => 1,
-  UNESCAPED            => 2,
+  UNESCAPED            => 1,
+  ESCAPED              => 2,
   NORMALIZED_RAW       => 3,
-  NORMALIZED_ESCAPED   => 4,
-  NORMALIZED_UNESCAPED => 5,
+  NORMALIZED_UNESCAPED => 4,
+  NORMALIZED_ESCAPED   => 5,
   _COUNT               => 6
 };
 
@@ -435,11 +435,11 @@ role {
                      # my ($self, $indice) = @_;
                      return 'Invalid indice' if ! defined($_[1]);
                      if    ($_[1] == RAW                  ) { return 'Raw value                 ' }
-                     elsif ($_[1] == ESCAPED              ) { return 'Escaped value             ' }
                      elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value           ' }
+                     elsif ($_[1] == ESCAPED              ) { return 'Escaped value             ' }
                      elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value      ' }
-                     elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value  ' }
                      elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
+                     elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value  ' }
                      else                                   { return 'Unknown indice            ' }
                    }
                   )
