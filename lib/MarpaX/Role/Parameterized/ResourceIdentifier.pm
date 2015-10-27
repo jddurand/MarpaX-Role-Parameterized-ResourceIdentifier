@@ -29,12 +29,16 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
+use MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
+use MooX::Role::Logger;
 use Types::Standard -all;
 use Role::Tiny;
 use constant {
-  BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BNF'
+  BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BNF',
+  BUILDARGS_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS',
+  LOGGER_ROLE => 'MooX::Role::Logger',
 };
 use constant {
   RAW                  => 0,
@@ -49,40 +53,40 @@ use constant {
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 
-has _input   => ( is => 'rw', isa => Str, trigger => 1);
+has input    => ( is => 'rw', isa => Str, trigger => 1);
 has _structs => ( is => 'rw', isa => ArrayRef[Object] );
 
 use MooX::Role::Parameterized;
-use MooX::Struct
-  Common => [ output        => [ is => 'rwp', isa => Str,           default => sub {    '' } ], # Parse tree value
-              scheme        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-              opaque        => [ is => 'rwp', isa => Str,           default => sub {    '' } ],
-              fragment      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+use MooX::Struct -rw,
+  Common => [ output        => [ isa => Str,           default => sub {    '' } ], # Parse tree value
+              scheme        => [ isa => Str|Undef,     default => sub { undef } ],
+              opaque        => [ isa => Str,           default => sub {    '' } ],
+              fragment      => [ isa => Str|Undef,     default => sub { undef } ],
             ],
   Generic => [ -extends => ['Common'],
-               hier_part     => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               query         => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               segment       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               authority     => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               path          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               path_abempty  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               path_absolute => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               path_noscheme => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               path_rootless => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               path_empty    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               relative_ref  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               relative_part => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               userinfo      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               host          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               port          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               ip_literal    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               ipv4_address  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               reg_name      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               ipv6_address  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               ipv6_addrz    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               ipvfuture     => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               zoneid        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
-               segments      => [ is => 'rwp', isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
+               hier_part     => [ isa => Str|Undef,     default => sub { undef } ],
+               query         => [ isa => Str|Undef,     default => sub { undef } ],
+               segment       => [ isa => Str|Undef,     default => sub { undef } ],
+               authority     => [ isa => Str|Undef,     default => sub { undef } ],
+               path          => [ isa => Str|Undef,     default => sub { undef } ],
+               path_abempty  => [ isa => Str|Undef,     default => sub { undef } ],
+               path_absolute => [ isa => Str|Undef,     default => sub { undef } ],
+               path_noscheme => [ isa => Str|Undef,     default => sub { undef } ],
+               path_rootless => [ isa => Str|Undef,     default => sub { undef } ],
+               path_empty    => [ isa => Str|Undef,     default => sub { undef } ],
+               relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
+               relative_part => [ isa => Str|Undef,     default => sub { undef } ],
+               userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
+               host          => [ isa => Str|Undef,     default => sub { undef } ],
+               port          => [ isa => Str|Undef,     default => sub { undef } ],
+               ip_literal    => [ isa => Str|Undef,     default => sub { undef } ],
+               ipv4_address  => [ isa => Str|Undef,     default => sub { undef } ],
+               reg_name      => [ isa => Str|Undef,     default => sub { undef } ],
+               ipv6_address  => [ isa => Str|Undef,     default => sub { undef } ],
+               ipv6_addrz    => [ isa => Str|Undef,     default => sub { undef } ],
+               ipvfuture     => [ isa => Str|Undef,     default => sub { undef } ],
+               zoneid        => [ isa => Str|Undef,     default => sub { undef } ],
+               segments      => [ isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
              ];
 
 role {
@@ -119,7 +123,7 @@ role {
   # ----------------------------
   # Sanity checks on bnf_package
   # ----------------------------
-  my $bnf_instance = $PARAMS{bnf_package}->new();
+  my $bnf_instance = $bnf_package->new();
   Role::Tiny->apply_roles_to_object($bnf_instance, BNF_ROLE) unless does($bnf_instance, BNF_ROLE);
   #
   # Make sure bnf instance really return what we want
@@ -171,8 +175,8 @@ role {
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;
   my $marpa_trace_values    = $setup->marpa_trace_values;
   my $marpa_trace           = $setup->marpa_trace;
+  my $with_logger           = $setup->with_logger;
   my $uri_compat            = $setup->uri_compat;
-
   #
   # -------
   # Logging
@@ -183,9 +187,15 @@ role {
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "[$type] Cannot open trace filehandle, $!";
   if ($marpa_trace) {
-    local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $PARAMS{bnf_package};
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $bnf_package;
     tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   }
+  # -----
+  # Roles
+  # -----
+  BUILDARGS_ROLE->apply({whoami => $whoami, type => 'NotTop', second_argument => 'base'}, target=> $whoami);
+  Role::Tiny->apply_roles_to_package($whoami, LOGGER_ROLE) unless $whoami->DOES(LOGGER_ROLE);
+  #
   # ----------
   # Injections
   # ----------
@@ -208,16 +218,16 @@ role {
       croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
       $self->_structs([(Common->new) x _COUNT]);
       $r->value($self);
-      if ($marpa_trace) {
+      if ($with_logger) {
         foreach (0..$max) {
-          my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [$self->_indice_description($_)]);
-          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $d->Dump);
+          my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->_indice_description($_)]);
+          $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
         }
       }
     } catch {
-      if ($marpa_trace) {
+      if ($with_logger) {
         foreach (split(/\n/, $_)) {
-          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $_)
+          $self->_logger->tracef('%s: %s', $bnf_package, $_)
         }
       }
       return
@@ -232,16 +242,16 @@ role {
       croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
       $self->_structs([(Generic->new) x _COUNT]);
       $r->value($self);
-      if ($marpa_trace) {
+      if ($with_logger) {
         foreach (0..$max) {
-          my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [$self->_indice_description($_)]);
-          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $d->Dump);
+          my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->_indice_description($_)]);
+          $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
         }
       }
     } catch {
-      if ($marpa_trace) {
+      if ($with_logger) {
         foreach (split(/\n/, $_)) {
-          $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $_)
+          $self->_logger->tracef('%s: %s', $bnf_package, $_)
         }
       }
       if ($uri_compat) {
@@ -250,7 +260,7 @@ role {
       return
     }
   };
-  install_modifier($whoami, 'fresh', _trigger__input => $trigger_input{$PARAMS{type}});
+  install_modifier($whoami, 'fresh', _trigger_input => $trigger_input{$PARAMS{type}});
   #
   # ------------------------
   # Parsing internal methods
@@ -381,6 +391,11 @@ role {
                      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
                      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
                      my $array_ref = &$args2array_sub($self, $lhs, @args);
+                     if ($with_logger) {
+                       $self->_logger->tracef('%s: %s ::= %s', $bnf_package, $lhs, "@rhs");
+                       $self->_logger->tracef('%s:   IN  %s', $bnf_package, \@args);
+                       $self->_logger->tracef('%s:   OUT %s', $bnf_package, $array_ref);
+                     }
                      my $structs = $self->_structs;
                      my $field = $MAPPING{$lhs};
                      if (defined($field)) {
@@ -418,13 +433,13 @@ role {
   install_modifier($whoami, 'fresh', _indice_description          => sub {
                      # my ($self, $indice) = @_;
                      return 'Invalid indice' if ! defined($_[1]);
-                     if    ($_[1] == RAW                  ) { return 'Raw value'                  }
-                     elsif ($_[1] == ESCAPED              ) { return 'Escaped value'              }
-                     elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value'            }
-                     elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value'       }
-                     elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value'   }
+                     if    ($_[1] == RAW                  ) { return 'Raw value                 ' }
+                     elsif ($_[1] == ESCAPED              ) { return 'Escaped value             ' }
+                     elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value           ' }
+                     elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value      ' }
+                     elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value  ' }
                      elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
-                     else                                   { return 'Unknown indice'             }
+                     else                                   { return 'Unknown indice            ' }
                    }
                   )
 };
