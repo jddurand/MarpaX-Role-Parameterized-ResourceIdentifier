@@ -52,52 +52,61 @@ role {
   #
   croak "[$type] second_argument must exist and do Str" unless Str->check($params->{second_argument});
   my $second_argument = $params->{second_argument};
-
   my $check = $type eq 'Top' ? $check_top : $check_others;
-  print STDERR "INSTALLING BUILDARGS in $whoami\n";
-  install_modifier($whoami, 'fresh', BUILDARGS => sub {
-                     my $class = shift;
+  #
+  # This is a bit vicious: we are installing BUILDARGS that is a Moo builtin method when
+  # the caller is doing "use Moo". If at this precise compile time, Moo does not see
+  # BUILDARGS, it will generate one.
+  # So depending on where is placed the "use Moo" we have to do a fresh or around
+  #
+  my $buildargs_sub = sub {
+    my $class = shift;
 
-                     my ($first, $second) = $check->($_[0], $_[1]);
-                     #
-                     # If first is a HashRef ref, it must have at least two keys pushed into decode():
-                     # - octets          Bytes (bytes)
-                     # - encoding        Str (encoding)
-                     # - decode_strategy Maybe[Int] (decode option)
-                     # It may also have:
-                     # - idn
-                     # - nfc
-                     # - ... whatever - it is kepts as it
-                     #
-                     my $input;
-                     my %rest = ();
-                     if (HashRef->check($first)) {
-                       croak 'octets must do Bytes' unless Bytes->check($first->{octets});
-                       croak 'encoding must do Str' unless Str->check($first->{encoding});
-                       my $octets          = delete($first->{octets});
-                       my $encoding        = delete($first->{encoding});
-                       #
-                       # Encode::encode will croak by itself if decode_strategy is not ok
-                       #
-                       my $decode_strategy = delete($first->{decode_strategy}) // Encode::FB_CROAK;
-                       %rest = %{$first};
-                       $input = decode($encoding, $octets, $decode_strategy);
-                     } else {
-                       $input = "$first";  # Eventual stringification
-                     }
-                     #
-                     # Copy from URI:
-                     # Get rid of potential wrapping
-                     #
-                     $input =~ s/^<(?:URL:)?(.*)>$/$1/;
-                     $input =~ s/^"(.*)"$/$1/;
-                     $input =~ s/^\s+//;
-                     $input =~ s/\s+$//;
-                     my $args = { input => $input, %rest };
-                     $args->{$second_argument} = $second if (! Undef->check($second));
-                     $args
-                   }
-                  );
+    my ($first, $second) = $check->($_[0], $_[1]);
+    #
+    # If first is a HashRef ref, it must have at least two keys pushed into decode():
+    # - octets          Bytes (bytes)
+    # - encoding        Str (encoding)
+    # - decode_strategy Maybe[Int] (decode option)
+    # It may also have:
+    # - idn
+    # - nfc
+    # - ... whatever - it is kepts as it
+    #
+    my $input;
+    my %rest = ();
+    if (HashRef->check($first)) {
+      croak 'octets must do Bytes' unless Bytes->check($first->{octets});
+      croak 'encoding must do Str' unless Str->check($first->{encoding});
+      my $octets          = delete($first->{octets});
+      my $encoding        = delete($first->{encoding});
+      #
+      # Encode::encode will croak by itself if decode_strategy is not ok
+      #
+      my $decode_strategy = delete($first->{decode_strategy}) // Encode::FB_CROAK;
+      %rest = %{$first};
+      $input = decode($encoding, $octets, $decode_strategy);
+    } else {
+      $input = "$first";  # Eventual stringification
+    }
+    #
+    # Copy from URI:
+    # Get rid of potential wrapping
+    #
+    $input =~ s/^<(?:URL:)?(.*)>$/$1/;
+    $input =~ s/^"(.*)"$/$1/;
+    $input =~ s/^\s+//;
+    $input =~ s/\s+$//;
+    my $args = { input => $input, %rest };
+    $args->{$second_argument} = $second if (! Undef->check($second));
+    $args
+  };
+  my $can_BUILDARGS = $whoami->can('BUILDARGS');
+  if ($can_BUILDARGS) {
+    install_modifier($whoami, 'around', BUILDARGS => sub { my ($orig, $self, @args); $self->$buildargs_sub(@args) });
+  } else {
+    install_modifier($whoami, 'fresh', BUILDARGS => $buildargs_sub );
+  }
 };
 
 1;
