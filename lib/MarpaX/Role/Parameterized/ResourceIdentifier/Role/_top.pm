@@ -12,10 +12,15 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types -all;
 use Carp qw/croak/;
 use Module::Runtime qw/use_module/;
-use Moo::Role;
 use Try::Tiny;
 use Types::Standard -all;
 use constant  { TRUE => !!1 };
+use MooX::Role::Parameterized::With 'MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS'
+  => {
+      whoami          => __PACKAGE__,
+      type            => 'Top',
+      second_argument => 'scheme',
+     };
 
 my $_CALLER = undef;
 
@@ -107,7 +112,5 @@ sub new {
 
   $self
 }
-
-with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BUILDARGS';
 
 1;

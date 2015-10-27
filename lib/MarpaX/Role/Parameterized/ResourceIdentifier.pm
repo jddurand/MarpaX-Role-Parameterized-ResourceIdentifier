@@ -28,13 +28,13 @@ use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
-use MarpaX::Role::Parameterized::ResourceIdentifier::Role::BNF;
+use MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
 use Types::Standard -all;
 use Role::Tiny;
 use constant {
-  BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BNF'
+  BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BNF'
 };
 use constant {
   RAW                  => 0,
@@ -96,6 +96,7 @@ role {
   #
   # We will not insert methods in the role but in the calling package
   #
+  croak 'whoami must exist and do Str' unless Str->check($PARAMS{whoami});
   my $whoami = $PARAMS{whoami};
   #
   # And this depend on its type: Common or Generic
@@ -446,8 +447,6 @@ sub percent_encode {
     !egp;
   $encoded
 }
-
-with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BUILDARGS';
 
 1;
 
