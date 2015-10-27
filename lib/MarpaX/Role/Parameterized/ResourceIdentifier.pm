@@ -53,40 +53,37 @@ has _input   => ( is => 'rw', isa => Str, trigger => 1);
 has _structs => ( is => 'rw', isa => ArrayRef[Object] );
 
 use MooX::Role::Parameterized;
-    use MooX::Struct -rw,
-      Common => [ output        => [ isa => Str,           default => sub {    '' } ], # Parse tree value
-                  scheme        => [ isa => Str|Undef,     default => sub { undef } ],
-                  opaque        => [ isa => Str,           default => sub {    '' } ],
-                  fragment      => [ isa => Str|Undef,     default => sub { undef } ],
-                ];
-    use MooX::Struct -rw,
-      Generic => [ output        => [ isa => Str,           default => sub {    '' } ], # Parse tree value
-                   scheme        => [ isa => Str|Undef,     default => sub { undef } ],
-                   fragment      => [ isa => Str|Undef,     default => sub { undef } ],
-                   hier_part     => [ isa => Str|Undef,     default => sub { undef } ],
-                   query         => [ isa => Str|Undef,     default => sub { undef } ],
-                   segment       => [ isa => Str|Undef,     default => sub { undef } ],
-                   authority     => [ isa => Str|Undef,     default => sub { undef } ],
-                   path          => [ isa => Str|Undef,     default => sub { undef } ],
-                   path_abempty  => [ isa => Str|Undef,     default => sub { undef } ],
-                   path_absolute => [ isa => Str|Undef,     default => sub { undef } ],
-                   path_noscheme => [ isa => Str|Undef,     default => sub { undef } ],
-                   path_rootless => [ isa => Str|Undef,     default => sub { undef } ],
-                   path_empty    => [ isa => Str|Undef,     default => sub { undef } ],
-                   relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
-                   relative_part => [ isa => Str|Undef,     default => sub { undef } ],
-                   userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
-                   host          => [ isa => Str|Undef,     default => sub { undef } ],
-                   port          => [ isa => Str|Undef,     default => sub { undef } ],
-                   ip_literal    => [ isa => Str|Undef,     default => sub { undef } ],
-                   ipv4_address  => [ isa => Str|Undef,     default => sub { undef } ],
-                   reg_name      => [ isa => Str|Undef,     default => sub { undef } ],
-                   ipv6_address  => [ isa => Str|Undef,     default => sub { undef } ],
-                   ipv6_addrz    => [ isa => Str|Undef,     default => sub { undef } ],
-                   ipvfuture     => [ isa => Str|Undef,     default => sub { undef } ],
-                   zoneid        => [ isa => Str|Undef,     default => sub { undef } ],
-                   segments      => [ isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
-                 ];
+use MooX::Struct
+  Common => [ output        => [ is => 'rwp', isa => Str,           default => sub {    '' } ], # Parse tree value
+              scheme        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+              opaque        => [ is => 'rwp', isa => Str,           default => sub {    '' } ],
+              fragment      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+            ],
+  Generic => [ -extends => ['Common'],
+               hier_part     => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               query         => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               segment       => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               authority     => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               path          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               path_abempty  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               path_absolute => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               path_noscheme => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               path_rootless => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               path_empty    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               relative_ref  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               relative_part => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               userinfo      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               host          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               port          => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               ip_literal    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               ipv4_address  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               reg_name      => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               ipv6_address  => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               ipv6_addrz    => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               ipvfuture     => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               zoneid        => [ is => 'rwp', isa => Str|Undef,     default => sub { undef } ],
+               segments      => [ is => 'rwp', isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
+             ];
 
 role {
   my $params = shift;
@@ -96,18 +93,28 @@ role {
   # -----------------------
   my %PARAMS = ();
   map { $PARAMS{$_} = $params->{$_} } qw/whoami type bnf_package normalizer/;
-
+  #
+  # We will not insert methods in the role but in the calling package
+  #
   my $whoami = $PARAMS{whoami};
-
+  #
+  # And this depend on its type: Common or Generic
+  #
   croak 'type must exist and do Enum[qw/Common Generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/Common Generic/;
   my $type = $PARAMS{type};
-  croak "[$type] bnf_package must exist and do Str"               unless Str->check                     ($PARAMS{bnf_package});
-  croak "[$type] normalizer must exist and do CodeRef"            unless CodeRef->check                 ($PARAMS{normalizer});
-
+  #
+  # There are only two things that differ between URI and IRI:
+  # - the grammar
+  #
+  croak "[$type] bnf_package must exist and do Str" unless Str->check($PARAMS{bnf_package});
   my $bnf_package = $PARAMS{bnf_package};
   use_module($bnf_package);
+  #
+  # - the normalization semantics
+  #
+  croak "[$type] normalizer must exist and do CodeRef" unless CodeRef->check($PARAMS{normalizer});
   my $normalizer  = $PARAMS{normalizer};
-
+  #
   # ----------------------------
   # Sanity checks on bnf_package
   # ----------------------------
@@ -154,11 +161,16 @@ role {
   my @not_found = grep { ! $fields{$_} } keys %fields;
   croak "[$type] Unmapped fields: @not_found" unless ! @not_found;
 
-  my $reserved    = $BNF{reserved};
-  my $unreserved  = $BNF{unreserved};
+  my $reserved    = $BNF{reserved};              # can be undef
+  my $unreserved  = $BNF{unreserved};            # can be undef
   my $pct_encoded = $BNF{pct_encoded} // '';
   my $is_utf8     = $BNF{is_utf8};
   my $action_name = $BNF{action_name};
+
+  my $marpa_trace_terminals = $setup->marpa_trace_terminals;
+  my $marpa_trace_values    = $setup->marpa_trace_values;
+  my $marpa_trace           = $setup->marpa_trace;
+  my $uri_compat            = $setup->uri_compat;
 
   #
   # -------
@@ -169,7 +181,7 @@ role {
   #
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "[$type] Cannot open trace filehandle, $!";
-  if ($setup->marpa_trace) {
+  if ($marpa_trace) {
     local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $PARAMS{bnf_package};
     tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   }
@@ -177,12 +189,12 @@ role {
   # Injections
   # ----------
   #
-  install_modifier($whoami, 'fresh', grammar => sub { $BNF{grammar} });
-  install_modifier($whoami, 'fresh', bnf => sub { $BNF{bnf} });
+  install_modifier($whoami, 'fresh', grammar => sub { $BNF{grammar} });      # Marpa::R2::Scanless::G instance
+  install_modifier($whoami, 'fresh', bnf => sub { $BNF{bnf} });              # BNF
   my $max = _COUNT - 1;
   my %recognizer_option = (
-                           trace_terminals =>  $setup->marpa_trace_terminals,
-                           trace_values =>  $setup->marpa_trace_values,
+                           trace_terminals =>  $marpa_trace_terminals,
+                           trace_values =>  $marpa_trace_values,
                            ranking_method => 'high_rule_only',
                            grammar => $BNF{grammar}
                           );
@@ -195,14 +207,14 @@ role {
       croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
       $self->_structs([(Common->new) x _COUNT]);
       $r->value($self);
-      if ($setup->marpa_trace) {
+      if ($marpa_trace) {
         foreach (0..$max) {
           my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [$self->_indice_description($_)]);
           $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $d->Dump);
         }
       }
     } catch {
-      if ($setup->marpa_trace) {
+      if ($marpa_trace) {
         foreach (split(/\n/, $_)) {
           $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $_)
         }
@@ -219,19 +231,19 @@ role {
       croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
       $self->_structs([(Generic->new) x _COUNT]);
       $r->value($self);
-      if ($setup->marpa_trace) {
+      if ($marpa_trace) {
         foreach (0..$max) {
           my $d = Data::Dumper->new([$self->_structs->[$_]->_output], [$self->_indice_description($_)]);
           $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $d->Dump);
         }
       }
     } catch {
-      if ($setup->marpa_trace) {
+      if ($marpa_trace) {
         foreach (split(/\n/, $_)) {
           $self->_logger->tracef('%s: %s', $PARAMS{bnf_package}, $_)
         }
       }
-      if ($setup->uri_compat) {
+      if ($uri_compat) {
         $self->$trigger_input_Common($input)
       }
       return
@@ -362,7 +374,7 @@ role {
   #
   my $default_action_sub;
   my %MAPPING = %{$BNF{mapping}};
-  install_modifier($whoami, 'fresh', $action_name => sub {
+  install_modifier($bnf_package, 'fresh', $action_name => sub {
                      my ($self, @args) = @_;
                      my $slg         = $Marpa::R2::Context::slg;
                      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
@@ -388,7 +400,8 @@ role {
   # Optional indice is which version we want, defaulting to NORMALIZED_UNESCAPED
   #
   foreach (@fields) {
-    install_modifier($whoami, 'fresh', "_$_" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->_output });
+    my $field = $_;
+    install_modifier($whoami, 'fresh', "_$field" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field });
   }
   #
   # Put helpers
@@ -434,6 +447,7 @@ sub percent_encode {
   $encoded
 }
 
+with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BUILDARGS';
 
 1;
 
