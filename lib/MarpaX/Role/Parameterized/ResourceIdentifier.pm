@@ -34,6 +34,7 @@ use Module::Runtime qw/use_module/;
 use Moo::Role;
 use MooX::Role::Logger;
 use Types::Standard -all;
+use Try::Tiny;
 use Role::Tiny;
 use constant {
   BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BNF',
@@ -216,7 +217,7 @@ role {
     try {
       $r->read(\$input);
       croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-      $self->_structs([(Common->new) x _COUNT]);
+      $self->_structs([map { Common->new } (0..$max)]);
       $r->value($self);
       if ($with_logger) {
         foreach (0..$max) {
@@ -240,7 +241,7 @@ role {
     try {
       $r->read(\$input);
       croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-      $self->_structs([(Generic->new) x _COUNT]);
+      $self->_structs([map { Generic->new } (0..$max)]);
       $r->value($self);
       if ($with_logger) {
         foreach (0..$max) {

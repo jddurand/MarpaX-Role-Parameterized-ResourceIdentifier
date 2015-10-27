@@ -37,7 +37,7 @@ sub _new_from_specific {
   my $self;
   try {
     use_module($subclass);
-    $self = $subclass->new(%{$args});
+    $self = $subclass->new($args);
     $self->_set_has_recognized_scheme(TRUE);
   };
   $self
@@ -51,7 +51,7 @@ sub _new_from_generic {
   my $self;
   try {
     use_module($subclass);
-    $self = $subclass->new(%{$args});
+    $self = $subclass->new($args);
   };
   $self
 }
@@ -62,7 +62,7 @@ sub _new_from_common {
   my $subclass = sprintf('%s::%s', $class, '_common');
   use_module($subclass);
 
-  $subclass->new(%{$args})
+  $subclass->new($args)
 }
 
 sub new {
