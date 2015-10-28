@@ -34,6 +34,7 @@ use Module::Runtime qw/use_module/;
 use Moo::Role;
 use MooX::Role::Logger;
 use Types::Standard -all;
+use Types::Encodings qw/Bytes/;
 use Try::Tiny;
 use Role::Tiny;
 use constant {
@@ -54,8 +55,11 @@ use constant {
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 
-has input    => ( is => 'rw', isa => Str, trigger => 1);
-has _structs => ( is => 'rw', isa => ArrayRef[Object] );
+has octets          => ( is => 'rw', isa => Bytes, predicate => 1);
+has encoding        => ( is => 'rw', isa => Str, predicate => 1);
+has decode_strategy => ( is => 'rw', isa => Int, predicate => 1);
+has input           => ( is => 'rw', isa => Str, trigger => 1);
+has _structs        => ( is => 'rw', isa => ArrayRef[Object] );
 
 use MooX::Role::Parameterized;
 use MooX::Struct -rw,
@@ -435,7 +439,14 @@ role {
   foreach (@fields) {
     my $field = $_;
     my $can = $whoami->can("_$field");
-    install_modifier($whoami, $can ? 'around' : 'fresh', "_$field" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field });
+    install_modifier($whoami,
+                     $can ? 'around' : 'fresh',
+                     "_$field" => 
+                     $can ?
+                     sub { shift; $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field }
+                     :
+                     sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field }
+                    );
   }
 };
 #

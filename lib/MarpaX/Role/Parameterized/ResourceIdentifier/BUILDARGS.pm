@@ -87,12 +87,16 @@ role {
       } else {
         croak 'octets must do Bytes' unless Bytes->check($first->{octets});
         croak 'encoding must do Str' unless Str->check($first->{encoding});
-        my $octets          = delete($first->{octets});
-        my $encoding        = delete($first->{encoding});
+        #
+        # octets, encoding and decode_strategy are kept. encoding in particular
+        # will be used in the IRI case for as_uri
+        #
+        my $octets          = $first->{octets};
+        my $encoding        = $first->{encoding};
         #
         # Encode::encode will croak by itself if decode_strategy is not ok
         #
-        my $decode_strategy = delete($first->{decode_strategy}) // Encode::FB_CROAK;
+        my $decode_strategy = $first->{decode_strategy} // Encode::FB_CROAK;
         $input = decode($encoding, $octets, $decode_strategy);
       }
       %rest = %{$first};
