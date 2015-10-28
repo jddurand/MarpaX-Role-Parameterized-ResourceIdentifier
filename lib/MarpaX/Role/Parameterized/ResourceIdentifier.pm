@@ -197,12 +197,28 @@ role {
   BUILDARGS_ROLE->apply({whoami => $whoami, type => 'NotTop', second_argument => 'base'}, target=> $whoami);
   Role::Tiny->apply_roles_to_package($whoami, LOGGER_ROLE) unless $whoami->DOES(LOGGER_ROLE);
   #
+  # ------------------------------------
+  # Helper used internally, not exported
+  # ------------------------------------
+  my $_indice_description = sub {
+    # my ($self, $indice) = @_;
+    return 'Invalid indice' if ! defined($_[1]);
+    if    ($_[1] == RAW                  ) { return 'Raw value                 ' }
+    elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value           ' }
+    elsif ($_[1] == ESCAPED              ) { return 'Escaped value             ' }
+    elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value      ' }
+    elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
+    elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value  ' }
+    else                                   { return 'Unknown indice            ' }
+  };
+  #
   # ----------
   # Injections
   # ----------
   #
-  install_modifier($whoami, 'fresh', grammar => sub { $BNF{grammar} });      # Marpa::R2::Scanless::G instance
-  install_modifier($whoami, 'fresh', bnf => sub { $BNF{bnf} });              # BNF
+  my $is_Generic = $type eq 'Generic';
+  install_modifier($whoami, $is_Generic ? 'around' : 'fresh', grammar => sub { $BNF{grammar} });      # Marpa::R2::Scanless::G instance
+  install_modifier($whoami, $is_Generic ? 'around' : 'fresh', bnf => sub { $BNF{bnf} });              # BNF
   my $max = _COUNT - 1;
   my %recognizer_option = (
                            trace_terminals =>  $marpa_trace_terminals,
@@ -210,45 +226,38 @@ role {
                            ranking_method => 'high_rule_only',
                            grammar => $BNF{grammar}
                           );
-  my %trigger_input = ();
-  $trigger_input{Common} = sub {
+  my $can_trigger_input = $whoami->can('_trigger_input');
+  my $trigger_input_inner = sub {
     my ($self, $input) = @_;
     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-    try {
-      $r->read(\$input);
-      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-      $self->_structs([map { Common->new } (0..$max)]);
-      $r->value($self);
-      if ($with_logger) {
-        foreach (0..$max) {
-          my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->_indice_description($_)]);
-          $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
-        }
+    $r->read(\$input);
+    croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
+    $self->_structs([map { Common->new } (0..$max)]);
+    $r->value($self);
+    if ($with_logger) {
+      foreach (0..$max) {
+        my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->$_indice_description($_)]);
+        $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
       }
+    }
+  };
+  my $trigger_input_fresh = sub {
+    my ($self, $input) = @_;
+    try {
+      $self->$trigger_input_inner($input);
     } catch {
       if ($with_logger) {
         foreach (split(/\n/, $_)) {
           $self->_logger->tracef('%s: %s', $bnf_package, $_)
         }
       }
-      return
+      return;
     }
   };
-  my $trigger_input_Common = $trigger_input{Common};
-  $trigger_input{Generic} = sub {
-    my ($self, $input) = @_;
-    my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+  my $trigger_input_around = sub {
+    my ($orig, $self, $input) = @_;
     try {
-      $r->read(\$input);
-      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-      $self->_structs([map { Generic->new } (0..$max)]);
-      $r->value($self);
-      if ($with_logger) {
-        foreach (0..$max) {
-          my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->_indice_description($_)]);
-          $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
-        }
-      }
+      $self->$trigger_input_inner($input);
     } catch {
       if ($with_logger) {
         foreach (split(/\n/, $_)) {
@@ -256,12 +265,15 @@ role {
         }
       }
       if ($uri_compat) {
-        $self->$trigger_input_Common($input)
+        $self->_logger->tracef('%s: %s', $bnf_package, 'Moving to parent trigger') if ($with_logger);
+        $self->$orig($input)
+      } else {
+        croak "$_";
       }
       return
     }
   };
-  install_modifier($whoami, 'fresh', _trigger_input => $trigger_input{$PARAMS{type}});
+  install_modifier($whoami, $can_trigger_input ? 'around' : 'fresh', _trigger_input => $can_trigger_input ? $trigger_input_around : $trigger_input_fresh);
   #
   # ------------------------
   # Parsing internal methods
@@ -386,6 +398,9 @@ role {
   #
   my $default_action_sub;
   my %MAPPING = %{$BNF{mapping}};
+  #
+  # This is installed in the BNF package, so there should never be a conflict
+  #
   install_modifier($bnf_package, 'fresh', $action_name => sub {
                      my ($self, @args) = @_;
                      my $slg         = $Marpa::R2::Context::slg;
@@ -418,31 +433,9 @@ role {
   #
   foreach (@fields) {
     my $field = $_;
-    install_modifier($whoami, 'fresh', "_$field" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field });
+    my $can = $whoami->can("_$field");
+    install_modifier($whoami, $can ? 'around' : 'fresh', "_$field" => sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field });
   }
-  #
-  # Put helpers
-  #
-  install_modifier($whoami, 'fresh', _indice__count               => sub { _COUNT               });
-  install_modifier($whoami, 'fresh', _indice__max                 => sub { $max                 });
-  install_modifier($whoami, 'fresh', _indice_raw                  => sub { RAW                  });
-  install_modifier($whoami, 'fresh', _indice_escaped              => sub { ESCAPED              });
-  install_modifier($whoami, 'fresh', _indice_unescaped            => sub { UNESCAPED            });
-  install_modifier($whoami, 'fresh', _indice_normalized_raw       => sub { NORMALIZED_RAW       });
-  install_modifier($whoami, 'fresh', _indice_normalized_escaped   => sub { NORMALIZED_ESCAPED   });
-  install_modifier($whoami, 'fresh', _indice_normalized_unescaped => sub { NORMALIZED_UNESCAPED });
-  install_modifier($whoami, 'fresh', _indice_description          => sub {
-                     # my ($self, $indice) = @_;
-                     return 'Invalid indice' if ! defined($_[1]);
-                     if    ($_[1] == RAW                  ) { return 'Raw value                 ' }
-                     elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value           ' }
-                     elsif ($_[1] == ESCAPED              ) { return 'Escaped value             ' }
-                     elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value      ' }
-                     elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
-                     elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value  ' }
-                     else                                   { return 'Unknown indice            ' }
-                   }
-                  )
 };
 #
 # Class methods common to any Resource Identifier
