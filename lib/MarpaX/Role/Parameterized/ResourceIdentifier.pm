@@ -108,6 +108,8 @@ role {
   #
   croak 'type must exist and do Enum[qw/Common Generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/Common Generic/;
   my $type = $PARAMS{type};
+  my $is_Generic = $type eq 'Generic';
+  my $is_Common = $type eq 'Common';
   #
   # There are only two things that differ between URI and IRI:
   # - the grammar
@@ -156,7 +158,7 @@ role {
   };
 
   my %fields = ();
-  my @fields = ($type eq 'Common') ? Common->FIELDS : Generic->FIELDS;
+  my @fields = $is_Common ? Common->FIELDS : Generic->FIELDS;
   map { $fields{$_} = 0 } @fields;
   foreach (keys %{$BNF{mapping}}) {
     my $field = $BNF{mapping}->{$_};
@@ -216,7 +218,6 @@ role {
   # Injections
   # ----------
   #
-  my $is_Generic = $type eq 'Generic';
   install_modifier($whoami, $is_Generic ? 'around' : 'fresh', grammar => sub { $BNF{grammar} });      # Marpa::R2::Scanless::G instance
   install_modifier($whoami, $is_Generic ? 'around' : 'fresh', bnf => sub { $BNF{bnf} });              # BNF
   my $max = _COUNT - 1;
@@ -232,7 +233,7 @@ role {
     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
     $r->read(\$input);
     croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-    $self->_structs([map { Common->new } (0..$max)]);
+    $self->_structs([map { $is_Common ? Common->new : Generic->new } (0..$max)]);
     $r->value($self);
     if ($with_logger) {
       foreach (0..$max) {
