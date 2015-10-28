@@ -62,6 +62,7 @@ role {
   my $buildargs_sub = sub {
     my $class = shift;
     my ($first, $second) = $check->($_[0], $_[1]);
+
     #
     # If first is a HashRef ref, it must have at least two keys pushed into decode():
     # - octets          Bytes (bytes)
@@ -92,9 +93,9 @@ role {
         # Encode::encode will croak by itself if decode_strategy is not ok
         #
         my $decode_strategy = delete($first->{decode_strategy}) // Encode::FB_CROAK;
-        %rest = %{$first};
         $input = decode($encoding, $octets, $decode_strategy);
       }
+      %rest = %{$first};
     } else {
       $input = "$first";  # Eventual stringification
     }

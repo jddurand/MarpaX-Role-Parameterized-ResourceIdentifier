@@ -11,6 +11,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::_top;
 
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types -all;
 use Carp qw/croak/;
+use Log::Any qw/$log/;
 use Module::Runtime qw/use_module/;
 use Try::Tiny;
 use Types::Standard -all;
@@ -36,9 +37,15 @@ sub _new_from_specific {
 
   my $self;
   try {
+    my %args = %{$args};    # Always do a copy
     use_module($subclass);
-    $self = $subclass->new($args);
+    $self = $subclass->new(\%args);
     $self->_set_has_recognized_scheme(TRUE);
+  } catch {
+    foreach (split(/\n/, "$_")) {
+      $log->tracef('%s: %s', $subclass, $_);
+    }
+    return;
   };
   $self
 }
@@ -50,8 +57,14 @@ sub _new_from_generic {
 
   my $self;
   try {
+    my %args = %{$args};    # Always do a copy
     use_module($subclass);
-    $self = $subclass->new($args);
+    $self = $subclass->new(\%args);
+  } catch {
+    foreach (split(/\n/, "$_")) {
+      $log->tracef('%s: %s', $subclass, $_);
+    }
+    return;
   };
   $self
 }
@@ -61,8 +74,11 @@ sub _new_from_common {
 
   my $subclass = sprintf('%s::%s', $class, '_common');
   use_module($subclass);
-
-  $subclass->new($args)
+  #
+  # Should never fail
+  #
+  my %args = %{$args};    # Always do a copy
+  $subclass->new(\%args)
 }
 
 sub new {
@@ -72,7 +88,7 @@ sub new {
   #
   my $args = $class->BUILDARGS(@_);
   my $input = $args->{input};
-  my $scheme = $args->{scheme};
+  my $scheme = exists($args->{scheme}) ? $args->{scheme} : undef;
   #
   # Specific: may fail, or even not exist
   #
