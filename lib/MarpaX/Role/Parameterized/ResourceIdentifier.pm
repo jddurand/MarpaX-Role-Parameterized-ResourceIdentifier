@@ -19,7 +19,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Data::Dumper;
-use Encode qw//;
+use Encode 2.21 qw/find_encoding/; # 2.21 for mime_name support
 require UNIVERSAL::DOES unless defined &UNIVERSAL::DOES;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
@@ -55,11 +55,21 @@ use constant {
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 
-has octets          => ( is => 'rw', isa => Bytes, predicate => 1);
-has encoding        => ( is => 'rw', isa => Str, predicate => 1);
-has decode_strategy => ( is => 'rw', isa => Int, predicate => 1);
-has input           => ( is => 'rw', isa => Str, trigger => 1);
-has _structs        => ( is => 'rw', isa => ArrayRef[Object] );
+has encoding                => ( is => 'ro',  isa => Str, predicate => 1, trigger => 1);
+has is_character_normalized => ( is => 'rwp', isa => Bool, default => sub { !!1 } );
+has input                   => ( is => 'rwp', isa => Str, trigger => 1);
+has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
+
+our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
+
+sub _trigger_encoding {
+  my ($self, $encoding) = @_;
+  #
+  # Remember if the octets were in an UCS-based encoding
+  #
+  my $enc_mime_name = find_encoding($encoding)->mime_name;
+  $self->_set_is_character_normalized(grep { $enc_mime_name eq $_ } @ucs_mime_name);
+}
 
 use MooX::Role::Parameterized;
 use MooX::Struct -rw,
@@ -235,7 +245,22 @@ role {
   my $trigger_input_inner = sub {
     my ($self, $input) = @_;
     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-    $r->read(\$input);
+    #
+    # Validate the input
+    #
+    if ($with_logger) {
+      my $d = Data::Dumper->new([$input], [qw/input/]);
+      $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
+    }
+    my $normalized_input = $self->$normalizer(undef, $input, undef);
+    if ($with_logger) {
+      my $d = Data::Dumper->new([$normalized_input], [qw/normalized_input/]);
+      $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
+    }
+    #
+    # Parse it
+    #
+    $r->read(\$normalized_input);
     croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
     $self->_structs([map { $is_Common ? Common->new : Generic->new } (0..$max)]);
     $r->value($self);
@@ -328,11 +353,11 @@ role {
         }
       }
       #
-      # Apply normalization
+      # Apply validation on the unescaped value, normalization on all others
       #
-      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_RAW]),
-      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_ESCAPED]),
-      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_UNESCAPED]),
+      $rc->[NORMALIZED_RAW]       = $self->$normalizer($field, $rc->[NORMALIZED_RAW], $lhs),
+      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($field, $rc->[NORMALIZED_ESCAPED], $lhs),
+      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($field, $rc->[NORMALIZED_UNESCAPED], $lhs),
       $rc
     }
   } else {
@@ -391,11 +416,11 @@ role {
         }
       }
       #
-      # Apply normalization
+      # Apply validation on the unescaped value, normalization on all others
       #
-      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_RAW]),
-      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_ESCAPED]),
-      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_UNESCAPED]),
+      $rc->[NORMALIZED_RAW]       = $self->$normalizer($field, $rc->[NORMALIZED_RAW], $lhs),
+      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($field, $rc->[NORMALIZED_ESCAPED], $lhs),
+      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($field, $rc->[NORMALIZED_UNESCAPED], $lhs),
       $rc
     }
   }
