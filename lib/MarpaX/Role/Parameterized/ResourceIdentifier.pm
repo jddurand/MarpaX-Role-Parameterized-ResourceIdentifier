@@ -293,6 +293,7 @@ role {
   # 5 = normalized raw
   #
   my $args2array_sub;
+  my %MAPPING = %{$BNF{mapping}};
   if (Undef->check($reserved)) {
     #
     # No escape/unescape in output - at the most we decode the input
@@ -329,9 +330,10 @@ role {
       #
       # Apply normalization
       #
-      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
-      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
-      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
+      my $field = $MAPPING{$lhs} // '';
+      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_RAW]),
+      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_ESCAPED]),
+      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_UNESCAPED]),
       $rc
     }
   } else {
@@ -392,9 +394,10 @@ role {
       #
       # Apply normalization
       #
-      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $rc->[NORMALIZED_RAW]),
-      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $rc->[NORMALIZED_ESCAPED]),
-      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $rc->[NORMALIZED_UNESCAPED]),
+      my $field = $MAPPING{$lhs} // '';
+      $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_RAW]),
+      $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_ESCAPED]),
+      $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_UNESCAPED]),
       $rc
     }
   }
@@ -402,7 +405,6 @@ role {
   # Generate default action
   #
   my $default_action_sub;
-  my %MAPPING = %{$BNF{mapping}};
   #
   # This is installed in the BNF package, so there should never be a conflict
   #
