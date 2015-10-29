@@ -299,7 +299,7 @@ role {
     # No escape/unescape in output - at the most we decode the input
     #
     $args2array_sub = sub {
-      my ($self, $lhs, @args) = @_;
+      my ($self, $lhs, $field, @args) = @_;
       my $rc = [ ('') x _COUNT ];
 
       foreach (@args) {
@@ -330,7 +330,6 @@ role {
       #
       # Apply normalization
       #
-      my $field = $MAPPING{$lhs} // '';
       $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_RAW]),
       $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_ESCAPED]),
       $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_UNESCAPED]),
@@ -338,7 +337,7 @@ role {
     }
   } else {
     $args2array_sub = sub {
-      my ($self, $lhs, @args) = @_;
+      my ($self, $lhs, $field, @args) = @_;
       my $rc = [ ('') x _COUNT ];
 
       foreach (@args) {
@@ -394,7 +393,6 @@ role {
       #
       # Apply normalization
       #
-      my $field = $MAPPING{$lhs} // '';
       $rc->[NORMALIZED_RAW]       = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_RAW]),
       $rc->[NORMALIZED_ESCAPED]   = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_ESCAPED]),
       $rc->[NORMALIZED_UNESCAPED] = $self->$normalizer($lhs, $field, $rc->[NORMALIZED_UNESCAPED]),
@@ -413,15 +411,15 @@ role {
                      my $slg         = $Marpa::R2::Context::slg;
                      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
                      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-                     my $array_ref = &$args2array_sub($self, $lhs, @args);
+                     my $field = $MAPPING{$lhs} // '';
+                     my $array_ref = &$args2array_sub($self, $lhs, $field, @args);
                      if ($with_logger) {
                        $self->_logger->tracef('%s: %s ::= %s', $bnf_package, $lhs, "@rhs");
                        $self->_logger->tracef('%s:   IN  %s', $bnf_package, \@args);
                        $self->_logger->tracef('%s:   OUT %s', $bnf_package, $array_ref);
                      }
                      my $structs = $self->_structs;
-                     my $field = $MAPPING{$lhs};
-                     if (defined($field)) {
+                     if (length($field)) {
                        #
                        # Segments is special
                        #
