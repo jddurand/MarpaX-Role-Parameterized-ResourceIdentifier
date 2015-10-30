@@ -32,51 +32,72 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
 use MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
+use MooX::HandlesVia;
 use MooX::Role::Logger;
 use Types::Standard -all;
 use Types::Encodings qw/Bytes/;
 use Try::Tiny;
 use Role::Tiny;
+use Unicode::Normalize qw/normalize/;
 use constant {
   BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BNF',
   BUILDARGS_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS',
   LOGGER_ROLE => 'MooX::Role::Logger',
 };
 use constant {
-  RAW                  => 0,
-  UNESCAPED            => 1,
-  ESCAPED              => 2,
-  NORMALIZED_RAW       => 3,
-  NORMALIZED_UNESCAPED => 4,
-  NORMALIZED_ESCAPED   => 5,
-  _COUNT               => 6
+  RAW                         => 0,
+  #
+  # For comparison ladder
+  #
+  CASE_NORMALIZED             => 1,
+  CHARACTER_NORMALIZED        => 2,
+  PERCENT_ENCODING_NORMALIZED => 3,
+  PATH_SEGMENT_NORMALIZED     => 4,
+  SCHEME_BASED_NORMALIZED     => 5,
+  _COUNT                      => 6
 };
-
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 
-has encoding                => ( is => 'ro',  isa => Str, predicate => 1, trigger => 1);
+has _encoding               => ( is => 'ro',  isa => Str, predicate => 1, trigger => 1);
 has is_character_normalized => ( is => 'rwp', isa => Bool, default => sub { !!1 } );
 has input                   => ( is => 'rwp', isa => Str, trigger => 1);
 has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
+our @normalizer_name = qw/case_normalizer
+                          character_normalizer
+                          percent_encoding_normalizer
+                          path_segment_normalizer
+                          scheme_based_normalizer/;
+
+foreach (@normalizer_name) {
+  has $_ => ( is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => "build_$_",
+              handles_via => 'Hash',
+              handles => {
+                          "exists_$_"  => 'exists',
+                          "get_$_"     => 'get'
+                         }
+            )
+}
+
+sub output { $_[0]->_structs->[_COUNT-1]->_output }
 
 our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
 
-sub _trigger_encoding {
-  my ($self, $encoding) = @_;
+sub _trigger__encoding {
+  my ($self, $_encoding) = @_;
   #
   # Remember if the octets were in an UCS-based encoding
   #
-  my $enc_mime_name = find_encoding($encoding)->mime_name;
-  $self->_set_is_character_normalized(grep { $enc_mime_name eq $_ } @ucs_mime_name);
+  my $enc_mime_name = find_encoding($_encoding)->mime_name;
+  $self->_set__is_character_normalized(grep { $enc_mime_name eq $_ } @ucs_mime_name);
 }
 
 use MooX::Role::Parameterized;
 use MooX::Struct -rw,
-  Common => [ output        => [ isa => Str,           default => sub {    '' } ], # Parse tree value
-              scheme        => [ isa => Str|Undef,     default => sub { undef } ],
-              opaque        => [ isa => Str,           default => sub {    '' } ],
-              fragment      => [ isa => Str|Undef,     default => sub { undef } ],
+  Common => [ output         => [ isa => Str,           default => sub {    '' } ], # Parse tree value
+              scheme         => [ isa => Str|Undef,     default => sub { undef } ],
+              opaque         => [ isa => Str,           default => sub {    '' } ],
+              fragment       => [ isa => Str|Undef,     default => sub { undef } ],
             ],
   Generic => [ -extends => ['Common'],
                hier_part     => [ isa => Str|Undef,     default => sub { undef } ],
@@ -111,7 +132,7 @@ role {
   # Sanity checks on params
   # -----------------------
   my %PARAMS = ();
-  map { $PARAMS{$_} = $params->{$_} } qw/whoami type bnf_package normalizer/;
+  map { $PARAMS{$_} = $params->{$_} } qw/whoami type bnf_package/;
   #
   # We will not insert methods in the role but in the calling package
   #
@@ -122,11 +143,11 @@ role {
   #
   croak 'type must exist and do Enum[qw/Common Generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/Common Generic/;
   my $type = $PARAMS{type};
-  my $is_Generic = $type eq 'Generic';
   my $is_Common = $type eq 'Common';
   #
   # There are only two things that differ between URI and IRI:
   # - the grammar
+  # - the normalizers
   #
   croak "[$type] bnf_package must exist and do Str" unless Str->check($PARAMS{bnf_package});
   my $bnf_package = $PARAMS{bnf_package};
@@ -134,8 +155,27 @@ role {
   #
   # - the normalization semantics
   #
-  croak "[$type] normalizer must exist and do CodeRef" unless CodeRef->check($PARAMS{normalizer});
-  my $normalizer  = $PARAMS{normalizer};
+  my $max = _COUNT - 1;
+  my @normalizer_sub = ();
+  foreach (0..$max) {
+    if (! $_) {
+      push(@normalizer_sub, undef) # Raw mode has no normalizer
+    } else {
+      my $inormalizer = $_ - 1;
+      my $builder = "build_$normalizer_name[$inormalizer]";
+      my $exists = "exists_$normalizer_name[$inormalizer]";
+      my $get = "get_$normalizer_name[$inormalizer]";
+      #
+      # The attributes are injected into Common
+      #
+      push(@normalizer_sub, sub {
+             my ($self, $field, $value, $lhs) = @_;
+             my $criteria = $field || $lhs || '';
+             $self->$exists($criteria) ? $self->$get($criteria)->($self, $field, $value, $lhs) : $value
+           }
+          );
+    }
+  }
   #
   # ----------------------------
   # Sanity checks on bnf_package
@@ -166,11 +206,6 @@ role {
   # A field can appear more than once as a value, but its semantic is fixed by us.
   # A symbol must be like <...>
   #
-  my $common_class;
-  my $generic_class;
-  eval q{
-  };
-
   my %fields = ();
   my @fields = $is_Common ? Common->FIELDS : Generic->FIELDS;
   map { $fields{$_} = 0 } @fields;
@@ -219,48 +254,28 @@ role {
   my $_indice_description = sub {
     # my ($self, $indice) = @_;
     return 'Invalid indice' if ! defined($_[1]);
-    if    ($_[1] == RAW                  ) { return 'Raw value                 ' }
-    elsif ($_[1] == UNESCAPED            ) { return 'Unescaped value           ' }
-    elsif ($_[1] == ESCAPED              ) { return 'Escaped value             ' }
-    elsif ($_[1] == NORMALIZED_RAW       ) { return 'Normalized raw value      ' }
-    elsif ($_[1] == NORMALIZED_UNESCAPED ) { return 'Normalized unescaped value' }
-    elsif ($_[1] == NORMALIZED_ESCAPED   ) { return 'Normalized escaped value  ' }
-    else                                   { return 'Unknown indice            ' }
+    if    ($_[1] == RAW                        ) { return 'Raw value                        ' }
+    elsif ($_[1] == CASE_NORMALIZED            ) { return 'Case normalized value            ' }
+    elsif ($_[1] == CHARACTER_NORMALIZED       ) { return 'Character normalized value       ' }
+    elsif ($_[1] == PERCENT_ENCODING_NORMALIZED) { return 'Percent encoding mormalized value' }
+    elsif ($_[1] == PATH_SEGMENT_NORMALIZED    ) { return 'Path segment normalized value    ' }
+    elsif ($_[1] == SCHEME_BASED_NORMALIZED    ) { return 'Scheme based normalized value    ' }
+    else                                         { return 'Unknown indice                   ' }
   };
-  #
-  # ----------
-  # Injections
-  # ----------
-  #
-  install_modifier($whoami, $is_Generic ? 'around' : 'fresh', grammar => sub { $BNF{grammar} });      # Marpa::R2::Scanless::G instance
-  install_modifier($whoami, $is_Generic ? 'around' : 'fresh', bnf => sub { $BNF{bnf} });              # BNF
-  my $max = _COUNT - 1;
+  # -------------
+  # Inlined stubs
+  # -------------
   my %recognizer_option = (
                            trace_terminals =>  $marpa_trace_terminals,
                            trace_values =>  $marpa_trace_values,
                            ranking_method => 'high_rule_only',
                            grammar => $BNF{grammar}
                           );
-  my $can_trigger_input = $whoami->can('_trigger_input');
-  my $trigger_input_inner = sub {
+  my $trigger_input = sub {
     my ($self, $input) = @_;
+
     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-    #
-    # Validate the input
-    #
-    if ($with_logger) {
-      my $d = Data::Dumper->new([$input], [qw/input/]);
-      $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
-    }
-    my $normalized_input = $self->$normalizer(undef, $input, undef);
-    if ($with_logger) {
-      my $d = Data::Dumper->new([$normalized_input], [qw/normalized_input/]);
-      $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
-    }
-    #
-    # Parse it
-    #
-    $r->read(\$normalized_input);
+    $r->read(\$input);
     croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
     $self->_structs([map { $is_Common ? Common->new : Generic->new } (0..$max)]);
     $r->value($self);
@@ -271,54 +286,135 @@ role {
       }
     }
   };
-  my $trigger_input_fresh = sub {
-    my ($self, $input) = @_;
-    try {
-      $self->$trigger_input_inner($input);
-    } catch {
-      if ($with_logger) {
-        foreach (split(/\n/, $_)) {
-          $self->_logger->tracef('%s: %s', $bnf_package, $_)
-        }
-      }
-      return;
-    }
-  };
-  my $trigger_input_around = sub {
-    my ($orig, $self, $input) = @_;
-    try {
-      $self->$trigger_input_inner($input);
-    } catch {
-      if ($with_logger) {
-        foreach (split(/\n/, $_)) {
-          $self->_logger->tracef('%s: %s', $bnf_package, $_)
-        }
-      }
-      if ($uri_compat) {
-        $self->_logger->tracef('%s: %s', $bnf_package, 'Moving to parent trigger') if ($with_logger);
-        $self->$orig($input)
-      } else {
-        croak "$_";
-      }
-      return
-    }
-  };
-  install_modifier($whoami, $can_trigger_input ? 'around' : 'fresh', _trigger_input => $can_trigger_input ? $trigger_input_around : $trigger_input_fresh);
+  #
+  # ----------
+  # Injections
+  # ----------
+  #
+  if ($type eq 'Common') {
+    install_modifier($whoami, 'fresh',  grammar => sub { $BNF{grammar} });
+    install_modifier($whoami, 'fresh',  bnf => sub { $BNF{bnf} });
+    install_modifier($whoami, 'fresh', _trigger_input => $trigger_input);
+  } else {
+    install_modifier($whoami, 'around',  grammar => sub { $BNF{grammar} });
+    install_modifier($whoami, 'around',  bnf => sub { $BNF{bnf} });
+    install_modifier($whoami, 'around', _trigger_input => sub {
+                       my ($orig, $self, $input) = @_;
+                       try {
+                         $self->$trigger_input($input);
+                       } catch {
+                         if ($setup->uri_compat) {
+                           if ($setup->with_logger) {
+                             foreach (split(/\n/, "$_")) {
+                               $self->_logger->tracef('%s: %s', $bnf_package, $_);
+                             }
+                           }
+                           $self->$orig($input);
+                         } else {
+                           croak $_;
+                         }
+                       }
+                     }
+                    );
+  }
   #
   # ------------------------
   # Parsing internal methods
   # ------------------------
-  #
-  # It is very important to remember the meaning of indices:
-  # 0 = escaped
-  # 1 = unescaped
-  # 2 = raw
-  # 3 = normalized escaped
-  # 4 = normalized unescaped
-  # 5 = normalized raw
-  #
-  my $args2array_sub;
   my %MAPPING = %{$BNF{mapping}};
+  my $args2array_sub = sub {
+    my ($self, $lhs, $field, @args) = @_;
+    my $rc = [ ('') x _COUNT ];
+    #
+    # Concatenate (not a reference == lexeme)
+    #
+    my $previous;
+    foreach my $irc (0..$max) {
+      do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args);
+      $rc->[$irc] = $normalizer_sub[$irc]->($self, $field, $previous, $lhs) if ($irc > 0);
+      $previous = $rc->[$irc];
+    }
+    $rc
+  };
+  #
+  # Generate default action
+  #
+  my $default_action_sub;
+  #
+  # This is installed in the BNF package, so there should never be a conflict
+  #
+  install_modifier($bnf_package, 'fresh', $action_name => sub {
+                     my ($self, @args) = @_;
+                     my $slg         = $Marpa::R2::Context::slg;
+                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+                     my $field = $MAPPING{$lhs};
+                     my $array_ref = &$args2array_sub($self, $lhs, $field, @args);
+                     if ($with_logger) {
+                       $self->_logger->tracef('%s: %s ::= %s', $bnf_package, $lhs, "@rhs");
+                       $self->_logger->tracef('%s:   IN  %s', $bnf_package, \@args);
+                       $self->_logger->tracef('%s:   OUT %s', $bnf_package, $array_ref);
+                     }
+                     my $structs = $self->_structs;
+                     if (defined($field)) {
+                       #
+                       # Segments is special
+                       #
+                       if ($field eq 'segments') {
+                         push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$max);
+                       } else {
+                         $structs->[$_]->$field($array_ref->[$_]) for (0..$max);
+                       }
+                     }
+                     $array_ref
+                   }
+                  );
+  #
+  # For every structure field, we inject a method with an underscore in it
+  # Optional indice is which version we want, defaulting to NORMALIZED_UNESCAPED
+  #
+  foreach (@fields) {
+    my $field = $_;
+    my $name = "_$field";
+      install_modifier($whoami,
+                       $whoami->can($name) ? 'around' : 'fresh',
+                       $name =>  sub { $_[1] //= $max, $_[0]->_structs->[$_[1]]->$field }
+                      );
+  }
+};
+#
+# Class methods common to any Resource Identifier
+#
+sub percent_encode {
+  my ($class, $string, $regexp) = @_;
+
+  my $encoded = $string;
+  $encoded =~ s!$regexp!
+    {
+     #
+     # ${^MATCH} is a read-only variable
+     # and Encode::encode is affecting $match -;
+     #
+     my $match = ${^MATCH};
+     join('', map { '%' . uc(unpack('H2', $_)) } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK)))
+    }
+    !egp;
+  $encoded
+}
+
+1;
+
+=head1 SEE ALSO
+
+L<Uniform Resource Identifier (URI): Generic Syntax|http://tools.ietf.org/html/rfc3986>
+
+L<Internationalized Resource Identifier (IRI): Generic Syntax|http://tools.ietf.org/html/rfc3987>
+
+L<Formats for IPv6 Scope Zone Identifiers in Literal Address Formats|https://tools.ietf.org/html/draft-fenner-literal-zone-02>
+
+=cut
+
+__DATA__
   if (Undef->check($reserved)) {
     #
     # No escape/unescape in output - at the most we decode the input
@@ -428,80 +524,3 @@ role {
   # Generate default action
   #
   my $default_action_sub;
-  #
-  # This is installed in the BNF package, so there should never be a conflict
-  #
-  install_modifier($bnf_package, 'fresh', $action_name => sub {
-                     my ($self, @args) = @_;
-                     my $slg         = $Marpa::R2::Context::slg;
-                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-                     my $field = $MAPPING{$lhs} // '';
-                     my $array_ref = &$args2array_sub($self, $lhs, $field, @args);
-                     if ($with_logger) {
-                       $self->_logger->tracef('%s: %s ::= %s', $bnf_package, $lhs, "@rhs");
-                       $self->_logger->tracef('%s:   IN  %s', $bnf_package, \@args);
-                       $self->_logger->tracef('%s:   OUT %s', $bnf_package, $array_ref);
-                     }
-                     my $structs = $self->_structs;
-                     if (length($field)) {
-                       #
-                       # Segments is special
-                       #
-                       if ($field eq 'segments') {
-                         push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$max);
-                       } else {
-                         $structs->[$_]->$field($array_ref->[$_]) for (0..$max);
-                       }
-                     }
-                     $array_ref
-                   }
-                  );
-  #
-  # For every structure field, we inject a method with an underscore in it
-  # Optional indice is which version we want, defaulting to NORMALIZED_UNESCAPED
-  #
-  foreach (@fields) {
-    my $field = $_;
-    my $can = $whoami->can("_$field");
-    install_modifier($whoami,
-                     $can ? 'around' : 'fresh',
-                     "_$field" => 
-                     $can ?
-                     sub { shift; $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field }
-                     :
-                     sub { $_[1] //= NORMALIZED_UNESCAPED, $_[0]->_structs->[$_[1]]->$field }
-                    );
-  }
-};
-#
-# Class methods common to any Resource Identifier
-#
-sub percent_encode {
-  my ($class, $string, $regexp) = @_;
-
-  my $encoded = $string;
-  $encoded =~ s!$regexp!
-    {
-     #
-     # ${^MATCH} is a read-only variable
-     # and Encode::encode is affecting $match -;
-     #
-     my $match = ${^MATCH};
-     join('', map { '%' . uc(unpack('H2', $_)) } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK)))
-    }
-    !egp;
-  $encoded
-}
-
-1;
-
-=head1 SEE ALSO
-
-L<Uniform Resource Identifier (URI): Generic Syntax|http://tools.ietf.org/html/rfc3986>
-
-L<Internationalized Resource Identifier (IRI): Generic Syntax|http://tools.ietf.org/html/rfc3987>
-
-L<Formats for IPv6 Scope Zone Identifiers in Literal Address Formats|https://tools.ietf.org/html/draft-fenner-literal-zone-02>
-
-=cut
