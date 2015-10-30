@@ -153,6 +153,18 @@ role {
   my $bnf_package = $PARAMS{bnf_package};
   use_module($bnf_package);
   #
+  # Eventual extends should be done asap
+  #
+  if (exists($params->{extends})) {
+    croak "[$type] extends must do ArrayRef" unless ArrayRef->check($params->{extends});
+    my $extends_sub;
+    croak "[$type] $whoami must can extends (did you forgot to use Moo ?)" unless $extends_sub = $whoami->can('extends');
+    &$extends_sub(@{$params->{extends}});
+    #"Moo"->_set_superclasses($klass, @parents);
+    #"Moo"->_maybe_reset_handlemoose($klass);
+    # extends(@{$params->{extends}});
+  }
+  #
   # - the normalization semantics
   #
   my $max = _COUNT - 1;
@@ -189,8 +201,8 @@ role {
   map { $BNF{$_} = $bnf_instance->$_} qw/grammar bnf reserved unreserved pct_encoded is_utf8 mapping action_name/;
   croak "[$type] $bnf_package->grammar must do InstanceOf['Marpa::R2::Scanless::G']"  unless blessed($BNF{grammar}) && blessed($BNF{grammar}) eq 'Marpa::R2::Scanless::G';
   croak "[$type] $bnf_package->bnf must do Str"                    unless Str->check($BNF{bnf});
-  croak "[$type] $bnf_package->reserved must do RegexpRef|Undef"   unless RegexpRef->check($BNF{reserved}) || Undef->check($BNF{reserved});
-  croak "[$type] $bnf_package->unreserved must do RegexpRef|Undef" unless RegexpRef->check($BNF{unreserved}) || Undef->check($BNF{unreserved});
+  croak "[$type] $bnf_package->reserved must do RegexpRef"         unless RegexpRef->check($BNF{reserved});
+  croak "[$type] $bnf_package->unreserved must do RegexpRef"       unless RegexpRef->check($BNF{unreserved});
   croak "[$type] $bnf_package->pct_encoded must do Str|Undef"      unless Str->check($BNF{pct_encoded}) || Undef->check($BNF{pct_encoded});
   croak "[$type] $bnf_package->is_utf8 must do Bool"               unless Bool->check($BNF{is_utf8});
   croak "[$type] $bnf_package->mapping must do Hashref[Str]"       unless HashRef->check($BNF{mapping}) && ! grep { ! Str->check($_) } keys %{$BNF{mapping}};
@@ -265,6 +277,33 @@ role {
   # -------------
   # Inlined stubs
   # -------------
+  #
+  # Marpa inner action
+  #
+  my %MAPPING = %{$BNF{mapping}};
+  my $args2array_sub = sub {
+    my ($self, $lhs, $field, @args) = @_;
+    my $rc = [ ('') x _COUNT ];
+    #
+    # Concatenate (not a reference == lexeme)
+    #
+    foreach my $irc (0..$max) {
+      do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
+    }
+    #
+    # Then normalization ladder
+    #
+    foreach my $inormalizer (1..$max) {
+      #
+      # For each normalized value, we apply the previous normalizers in order
+      #
+      do { $rc->[$inormalizer] = $normalizer_sub[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for (1..$inormalizer);
+    }
+    $rc
+  };
+  #
+  # Input trigger
+  #
   my %recognizer_option = (
                            trace_terminals =>  $marpa_trace_terminals,
                            trace_values =>  $marpa_trace_values,
@@ -282,7 +321,7 @@ role {
     if ($with_logger) {
       foreach (0..$max) {
         my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->$_indice_description($_)]);
-        $self->_logger->tracef('%s: %s', $bnf_package, $d->Dump);
+        $self->_logger->debugf('%s: %s', $bnf_package, $d->Dump);
       }
     }
   };
@@ -294,10 +333,12 @@ role {
   if ($type eq 'Common') {
     install_modifier($whoami, 'fresh',  grammar => sub { $BNF{grammar} });
     install_modifier($whoami, 'fresh',  bnf => sub { $BNF{bnf} });
+    install_modifier($whoami, 'fresh',  unreserved => sub { $BNF{unreserved} });
     install_modifier($whoami, 'fresh', _trigger_input => $trigger_input);
   } else {
     install_modifier($whoami, 'around',  grammar => sub { $BNF{grammar} });
     install_modifier($whoami, 'around',  bnf => sub { $BNF{bnf} });
+    install_modifier($whoami, 'around',  unreserved => sub { $BNF{unreserved} });
     install_modifier($whoami, 'around', _trigger_input => sub {
                        my ($orig, $self, $input) = @_;
                        try {
@@ -317,36 +358,6 @@ role {
                      }
                     );
   }
-  #
-  # ------------------------
-  # Parsing internal methods
-  # ------------------------
-  my %MAPPING = %{$BNF{mapping}};
-  my $args2array_sub = sub {
-    my ($self, $lhs, $field, @args) = @_;
-    my $rc = [ ('') x _COUNT ];
-    #
-    # Concatenate (not a reference == lexeme)
-    #
-    foreach my $irc (0..$max) {
-      do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
-    }
-    #
-    # Then normalization ladder
-    #
-    foreach my $inormalizer (1..$max) {
-      my $value = $rc->[$inormalizer];
-      foreach my $previous_inormalizer (1..$inormalizer-1) {
-        $value = $normalizer_sub[$previous_inormalizer]->($self, $field, $value, $lhs)
-      }
-      $rc->[$inormalizer] = $normalizer_sub[$inormalizer]->($self, $field, $value, $lhs)
-    }
-    $rc
-  };
-  #
-  # Generate default action
-  #
-  my $default_action_sub;
   #
   # This is installed in the BNF package, so there should never be a conflict
   #
