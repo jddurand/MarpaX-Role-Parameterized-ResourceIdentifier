@@ -328,11 +328,15 @@ role {
     #
     # Concatenate (not a reference == lexeme)
     #
-    my $previous;
     foreach my $irc (0..$max) {
-      do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args);
-      $rc->[$irc] = $normalizer_sub[$irc]->($self, $field, $previous, $lhs) if ($irc > 0);
-      $previous = $rc->[$irc];
+      do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
+    }
+    #
+    # Then normalization ladder
+    #
+    my $previous = $rc->[RAW];
+    foreach my $inormalizer (1..$max) {
+      $previous = $rc->[$inormalizer] = $normalizer_sub[$inormalizer]->($self, $field, $previous, $lhs)
     }
     $rc
   };
