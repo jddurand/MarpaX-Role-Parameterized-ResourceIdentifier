@@ -46,16 +46,20 @@ use constant {
 };
 use constant {
   RAW                         => 0,
+  DECODED                     => 1,
   #
   # For comparison ladder
   #
-  CASE_NORMALIZED             => 1,
-  CHARACTER_NORMALIZED        => 2,
-  PERCENT_ENCODING_NORMALIZED => 3,
-  PATH_SEGMENT_NORMALIZED     => 4,
-  SCHEME_BASED_NORMALIZED     => 5,
-  _COUNT                      => 6
+  CASE_NORMALIZED             => 2,
+  CHARACTER_NORMALIZED        => 3,
+  PERCENT_ENCODING_NORMALIZED => 4,
+  PATH_SEGMENT_NORMALIZED     => 5,
+  SCHEME_BASED_NORMALIZED     => 6,
+  _COUNT                      => 7
 };
+our $indice_normalizer_start = CASE_NORMALIZED;
+our $indice_normalizer_end   = SCHEME_BASED_NORMALIZED;
+
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 
@@ -165,30 +169,6 @@ role {
     # extends(@{$params->{extends}});
   }
   #
-  # - the normalization semantics
-  #
-  my $max = _COUNT - 1;
-  my @normalizer_sub = ();
-  foreach (0..$max) {
-    if (! $_) {
-      push(@normalizer_sub, undef) # Raw mode has no normalizer
-    } else {
-      my $inormalizer = $_ - 1;
-      my $builder = "build_$normalizer_name[$inormalizer]";
-      my $exists = "exists_$normalizer_name[$inormalizer]";
-      my $get = "get_$normalizer_name[$inormalizer]";
-      #
-      # The attributes are injected into Common
-      #
-      push(@normalizer_sub, sub {
-             my ($self, $field, $value, $lhs) = @_;
-             my $criteria = $field || $lhs || '';
-             $self->$exists($criteria) ? $self->$get($criteria)->($self, $field, $value, $lhs) : $value
-           }
-          );
-    }
-  }
-  #
   # ----------------------------
   # Sanity checks on bnf_package
   # ----------------------------
@@ -260,13 +240,14 @@ role {
   BUILDARGS_ROLE->apply({whoami => $whoami, type => 'NotTop', second_argument => 'base'}, target=> $whoami);
   Role::Tiny->apply_roles_to_package($whoami, LOGGER_ROLE) unless $whoami->DOES(LOGGER_ROLE);
   #
-  # ------------------------------------
-  # Helper used internally, not exported
-  # ------------------------------------
+  # -------------------------------------
+  # Helpers used internally, not exported
+  # -------------------------------------
   my $_indice_description = sub {
     # my ($self, $indice) = @_;
     return 'Invalid indice' if ! defined($_[1]);
     if    ($_[1] == RAW                        ) { return 'Raw value                        ' }
+    elsif ($_[1] == DECODED                    ) { return 'Decoded raw value                ' }
     elsif ($_[1] == CASE_NORMALIZED            ) { return 'Case normalized value            ' }
     elsif ($_[1] == CHARACTER_NORMALIZED       ) { return 'Character normalized value       ' }
     elsif ($_[1] == PERCENT_ENCODING_NORMALIZED) { return 'Percent encoding mormalized value' }
@@ -274,9 +255,30 @@ role {
     elsif ($_[1] == SCHEME_BASED_NORMALIZED    ) { return 'Scheme based normalized value    ' }
     else                                         { return 'Unknown indice                   ' }
   };
+  my $max = _COUNT - 1;
   # -------------
   # Inlined stubs
   # -------------
+  #
+  # Normalizers
+  #
+  my @normalizer_sub = ();
+  foreach (0..$max) {
+    if (($_ < $indice_normalizer_start) || ($_ > $indice_normalizer_end)) {
+      push(@normalizer_sub, undef) # No normalizer at this indice
+    } else {
+      my $inormalizer = $_ - $indice_normalizer_start;
+      my $builder = "build_$normalizer_name[$inormalizer]";
+      my $exists = "exists_$normalizer_name[$inormalizer]";
+      my $get = "get_$normalizer_name[$inormalizer]";
+      push(@normalizer_sub, sub {
+             my ($self, $field, $value, $lhs) = @_;
+             my $criteria = $field || $lhs || '';
+             $self->$exists($criteria) ? $self->$get($criteria)->($self, $field, $value, $lhs) : $value
+           }
+          );
+    }
+  }
   #
   # Marpa inner action
   #
@@ -291,13 +293,24 @@ role {
       do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
     }
     #
-    # Then normalization ladder
+    # Decoded output is explicitely done here on the raw output
     #
-    foreach my $inormalizer (1..$max) {
+    if ($lhs eq $pct_encoded) {
+      my $octets = '';
+      while ($rc->[DECODED] =~ m/(?<=%)[^%]+/gp) {
+        $octets .= chr(hex(${^MATCH}))
+      }
+      $rc->[DECODED] = MarpaX::RFC::RFC3629->new($octets)->output;
+    }
+
+    #
+    # The normalization ladder
+    #
+    foreach my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
       #
       # For each normalized value, we apply the previous normalizers in order
       #
-      do { $rc->[$inormalizer] = $normalizer_sub[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for (1..$inormalizer);
+      do { $rc->[$inormalizer] = $normalizer_sub[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
     }
     $rc
   };
@@ -389,14 +402,14 @@ role {
                   );
   #
   # For every structure field, we inject a method with an underscore in it
-  # Optional indice is which version we want, defaulting to NORMALIZED_UNESCAPED
+  # Optional indice is which version we want, defaulting to DECODED
   #
   foreach (@fields) {
     my $field = $_;
     my $name = "_$field";
       install_modifier($whoami,
                        $whoami->can($name) ? 'around' : 'fresh',
-                       $name =>  sub { $_[1] //= $max, $_[0]->_structs->[$_[1]]->$field }
+                       $name =>  sub { $_[1] //= DECODED, $_[0]->_structs->[$_[1]]->$field }
                       );
   }
 };
