@@ -334,9 +334,12 @@ role {
     #
     # Then normalization ladder
     #
-    my $previous = $rc->[RAW];
     foreach my $inormalizer (1..$max) {
-      $previous = $rc->[$inormalizer] = $normalizer_sub[$inormalizer]->($self, $field, $previous, $lhs)
+      my $value = $rc->[$inormalizer];
+      foreach my $previous_inormalizer (1..$inormalizer-1) {
+        $value = $normalizer_sub[$previous_inormalizer]->($self, $field, $value, $lhs)
+      }
+      $rc->[$inormalizer] = $normalizer_sub[$inormalizer]->($self, $field, $value, $lhs)
     }
     $rc
   };
