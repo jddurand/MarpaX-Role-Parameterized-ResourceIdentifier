@@ -433,6 +433,98 @@ sub percent_encode {
   $encoded
 }
 
+sub remove_dot_segments {
+  my ($self, $input) = @_;
+
+  #
+  # 1.  The input buffer is initialized with the now-appended path
+  # components and the output buffer is initialized to the empty
+  # string.
+  #
+  my $output = '';
+
+  # my $i = 0;
+  # my $step = ++$i;
+  # my $substep = '';
+  # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER";
+  # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+  # $step = ++$i;
+  #
+  # 2.  While the input buffer is not empty, loop as follows:
+  #
+  while (length($input)) {
+    #
+    # A. If the input buffer begins with a prefix of "../" or "./",
+    #    then remove that prefix from the input buffer; otherwise,
+    #
+    if (index($input, '../') == 0) {
+      substr($input, 0, 3, '');
+      # $substep = 'A';
+    }
+    elsif (index($input, './') == 0) {
+      substr($input, 0, 2, '');
+      # $substep = 'A';
+    }
+    #
+    # B. if the input buffer begins with a prefix of "/./" or "/.",
+    #    where "." is a complete path segment, then replace that
+    #    prefix with "/" in the input buffer; otherwise,
+    #
+    elsif (index($input, '/./') == 0) {
+      substr($input, 0, 3, '/');
+      # $substep = 'B';
+    }
+    elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # Take care this can confuse the other test on '/../ or '/..'
+      substr($input, 0, 2, '/');
+      # $substep = 'B';
+    }
+    #
+    # C. if the input buffer begins with a prefix of "/../" or "/..",
+    #    where ".." is a complete path segment, then replace that
+    #    prefix with "/" in the input buffer and remove the last
+    #    segment and its preceding "/" (if any) from the output
+    #    buffer; otherwise,
+    #
+    elsif (index($input, '/../') == 0) {
+      substr($input, 0, 4, '/');
+      $output =~ s/\/?[^\/]*\z//;
+      # $substep = 'C';
+    }
+    elsif ($input =~ /^\/\.\.(?:[^\/]|\z)/) {
+      substr($input, 0, 3, '/');
+      $output =~ s/\/?[^\/]*\z//;
+      # $substep = 'C';
+    }
+    #
+    # D. if the input buffer consists only of "." or "..", then remove
+    #    that from the input buffer; otherwise,
+    #
+    elsif (($input eq '.') || ($input eq '..')) {
+      $input = '';
+      # $substep = 'D';
+    }
+    #
+    # E. move the first path segment in the input buffer to the end of
+    #    the output buffer, including the initial "/" character (if
+    #    any) and any subsequent characters up to, but not including,
+    #    the next "/" character or the end of the input buffer.
+    #
+    #    Note: "or the end of the input buffer" ?
+    #
+    else {
+      $input =~ /^\/?([^\/]*)/;                            # This will always match
+      $output .= substr($input, $-[0], $+[0] - $-[0], ''); # Note that perl has no problem saying length is zero
+      # $substep = 'E';
+    }
+    # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+  }
+  #
+  # 3. Finally, the output buffer is returned as the result of
+  #    remove_dot_segments.
+  #
+  return $output;
+}
+
 1;
 
 =head1 SEE ALSO
