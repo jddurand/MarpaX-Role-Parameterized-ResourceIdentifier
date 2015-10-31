@@ -98,36 +98,36 @@ sub _trigger__encoding {
 
 use MooX::Role::Parameterized;
 use MooX::Struct -rw,
-  Common => [ output         => [ isa => Str,           default => sub {    '' } ], # Parse tree value
-              scheme         => [ isa => Str|Undef,     default => sub { undef } ],
-              opaque         => [ isa => Str,           default => sub {    '' } ],
-              fragment       => [ isa => Str|Undef,     default => sub { undef } ],
+  _common => [ output         => [ isa => Str,           default => sub {    '' } ], # Parse tree value
+               scheme         => [ isa => Str|Undef,     default => sub { undef } ],
+               opaque         => [ isa => Str,           default => sub {    '' } ],
+               fragment       => [ isa => Str|Undef,     default => sub { undef } ],
             ],
-  Generic => [ -extends => ['Common'],
-               hier_part     => [ isa => Str|Undef,     default => sub { undef } ],
-               query         => [ isa => Str|Undef,     default => sub { undef } ],
-               segment       => [ isa => Str|Undef,     default => sub { undef } ],
-               authority     => [ isa => Str|Undef,     default => sub { undef } ],
-               path          => [ isa => Str|Undef,     default => sub { undef } ],
-               path_abempty  => [ isa => Str|Undef,     default => sub { undef } ],
-               path_absolute => [ isa => Str|Undef,     default => sub { undef } ],
-               path_noscheme => [ isa => Str|Undef,     default => sub { undef } ],
-               path_rootless => [ isa => Str|Undef,     default => sub { undef } ],
-               path_empty    => [ isa => Str|Undef,     default => sub { undef } ],
-               relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
-               relative_part => [ isa => Str|Undef,     default => sub { undef } ],
-               userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
-               host          => [ isa => Str|Undef,     default => sub { undef } ],
-               port          => [ isa => Str|Undef,     default => sub { undef } ],
-               ip_literal    => [ isa => Str|Undef,     default => sub { undef } ],
-               ipv4_address  => [ isa => Str|Undef,     default => sub { undef } ],
-               reg_name      => [ isa => Str|Undef,     default => sub { undef } ],
-               ipv6_address  => [ isa => Str|Undef,     default => sub { undef } ],
-               ipv6_addrz    => [ isa => Str|Undef,     default => sub { undef } ],
-               ipvfuture     => [ isa => Str|Undef,     default => sub { undef } ],
-               zoneid        => [ isa => Str|Undef,     default => sub { undef } ],
-               segments      => [ isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
-             ];
+  _generic => [ -extends => ['_common'],
+                hier_part     => [ isa => Str|Undef,     default => sub { undef } ],
+                query         => [ isa => Str|Undef,     default => sub { undef } ],
+                segment       => [ isa => Str|Undef,     default => sub { undef } ],
+                authority     => [ isa => Str|Undef,     default => sub { undef } ],
+                path          => [ isa => Str|Undef,     default => sub { undef } ],
+                path_abempty  => [ isa => Str|Undef,     default => sub { undef } ],
+                path_absolute => [ isa => Str|Undef,     default => sub { undef } ],
+                path_noscheme => [ isa => Str|Undef,     default => sub { undef } ],
+                path_rootless => [ isa => Str|Undef,     default => sub { undef } ],
+                path_empty    => [ isa => Str|Undef,     default => sub { undef } ],
+                relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
+                relative_part => [ isa => Str|Undef,     default => sub { undef } ],
+                userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
+                host          => [ isa => Str|Undef,     default => sub { undef } ],
+                port          => [ isa => Str|Undef,     default => sub { undef } ],
+                ip_literal    => [ isa => Str|Undef,     default => sub { undef } ],
+                ipv4_address  => [ isa => Str|Undef,     default => sub { undef } ],
+                reg_name      => [ isa => Str|Undef,     default => sub { undef } ],
+                ipv6_address  => [ isa => Str|Undef,     default => sub { undef } ],
+                ipv6_addrz    => [ isa => Str|Undef,     default => sub { undef } ],
+                ipvfuture     => [ isa => Str|Undef,     default => sub { undef } ],
+                zoneid        => [ isa => Str|Undef,     default => sub { undef } ],
+                segments      => [ isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
+              ];
 
 role {
   my $params = shift;
@@ -143,11 +143,12 @@ role {
   croak 'whoami must exist and do Str' unless Str->check($PARAMS{whoami});
   my $whoami = $PARAMS{whoami};
   #
-  # And this depend on its type: Common or Generic
+  # And this depend on its type: _common or _generic
   #
-  croak 'type must exist and do Enum[qw/Common Generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/Common Generic/;
+  croak 'type must exist and do Enum[qw/_common _generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/_common _generic/;
   my $type = $PARAMS{type};
-  my $is_Common = $type eq 'Common';
+  my $is__common = $type eq '_common';
+  my $is__generic = $type eq '_generic';
   #
   # There are only two things that differ between URI and IRI:
   # - the grammar
@@ -193,7 +194,7 @@ role {
   # A symbol must be like <...>
   #
   my %fields = ();
-  my @fields = $is_Common ? Common->FIELDS : Generic->FIELDS;
+  my @fields = $is__common ? _common->FIELDS : _generic->FIELDS;
   map { $fields{$_} = 0 } @fields;
   foreach (keys %{$BNF{mapping}}) {
     my $field = $BNF{mapping}->{$_};
@@ -390,7 +391,7 @@ role {
     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
     $r->read(\$input);
     croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-    $self->_structs([map { $is_Common ? Common->new : Generic->new } (0..$max)]);
+    $self->_structs([map { $is__common ? _common->new : _generic->new } (0..$max)]);
     $r->value($self);
     if ($with_logger) {
       foreach (0..$max) {
@@ -404,7 +405,7 @@ role {
   # Injections
   # ----------
   #
-  if ($type eq 'Common') {
+  if ($is__common) {
     install_modifier($whoami, 'fresh',  grammar => sub { $BNF{grammar} });
     install_modifier($whoami, 'fresh',  bnf => sub { $BNF{bnf} });
     install_modifier($whoami, 'fresh',  unreserved => sub { $BNF{unreserved} });
@@ -433,9 +434,9 @@ role {
                     );
   }
   #
-  # Normalizers: their semantic is known in advance for Generic.
+  # Normalizers: their semantic is known in advance for _generic.
   # Even in the case of scheme, the spec says that it applies only
-  # for IRI's using the generic syntax. So Common has no normalizer at all.
+  # for IRI's using the _generic syntax. So _common has no normalizer at all.
   #
   # For every inlined sub, the arguments are: ($self, $field, $value, $lhs) = @_
   #
@@ -444,7 +445,7 @@ role {
   # 5.3.2.  Syntax-Based Normalization
   #
   #
-  if ($type eq 'Generic') {
+  if ($is__generic) {
     #
     # 5.3.2.1.  Case Normalization
     #
@@ -457,7 +458,7 @@ role {
                                #
                                $pct_encoded => sub { uc($_[2]) },
                                #
-                               # When an IRI uses components of the generic syntax, the component
+                               # When an IRI uses components of the _generic syntax, the component
                                # syntax equivalence rules always apply; namely, that the scheme and
                                # US-ASCII only host are case insensitive and therefore should be
                                # normalized to lowercase.
