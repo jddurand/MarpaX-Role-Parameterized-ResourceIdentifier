@@ -565,10 +565,14 @@ role {
   foreach (@fields) {
     my $field = $_;
     my $name = "_$field";
-      install_modifier($whoami,
-                       $whoami->can($name) ? 'around' : 'fresh',
-                       $name =>  sub { $_[1] //= ESCAPED, $_[0]->_structs->[$_[1]]->$field }
-                      );
+    my $can = $whoami->can($name);
+    install_modifier($whoami,
+                     $can ? 'around' : 'fresh',
+                     $name => $can ?
+                     sub { $_[1]->_structs->[$_[2] // ESCAPED]->$field }   # $orig, $self, $indice
+                     :
+                     sub { $_[0]->_structs->[$_[1] // ESCAPED]->$field }   # $self, $indice
+                    );
   }
 };
 #
