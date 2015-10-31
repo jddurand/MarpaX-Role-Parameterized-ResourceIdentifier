@@ -433,6 +433,103 @@ role {
                     );
   }
   #
+  # Normalizers: their semantic is known in advance for Generic.
+  # Even in the case of scheme, the spec says that it applies only
+  # for IRI's using the generic syntax. So Common has no normalizer at all.
+  #
+  # For every inlined sub, the arguments are: ($self, $field, $value, $lhs) = @_
+  #
+  # This correspond to section:
+  #
+  # 5.3.2.  Syntax-Based Normalization
+  #
+  #
+  if ($type eq 'Generic') {
+    #
+    # 5.3.2.1.  Case Normalization
+    #
+    install_modifier($whoami, 'around', build_case_normalizer => sub {
+                       return {
+                               #
+                               # For all IRIs, the hexadecimal digits within a percent-encoding
+                               # triplet (e.g., "%3a" versus "%3A") are case-insensitive and therefore
+                               # should be normalized to use uppercase letters for the digits A-F.
+                               #
+                               $pct_encoded => sub { uc($_[2]) },
+                               #
+                               # When an IRI uses components of the generic syntax, the component
+                               # syntax equivalence rules always apply; namely, that the scheme and
+                               # US-ASCII only host are case insensitive and therefore should be
+                               # normalized to lowercase.
+                               #
+                               scheme => sub { lc($_[2]) },
+                               host   => sub { $_[2] =~ /[^\x{0}-\x{7F}]/ ? $_[2] : lc($_[2]) }
+                              }
+                     }
+                    );
+    #
+    # 5.3.2.2.  Character Normalization
+    #
+    install_modifier($whoami, 'around', build_character_normalizer => sub {
+                       return {
+                               #
+                               # Equivalence of IRIs MUST rely on the assumption that IRIs are
+                               # appropriately pre-character-normalized rather than apply character
+                               # normalization when comparing two IRIs.  The exceptions are conversion
+                               # from a non-digital form, and conversion from a non-UCS-based
+                               # character encoding to a UCS-based character encoding. In these cases,
+                               # NFC or a normalizing transcoder using NFC MUST be used for
+                               # interoperability.
+                               #
+                               output => sub { $_[0]->is_character_normalized ? $_[2] : normalize('NFC', $_[2]) }
+                              }
+                     }
+                    );
+    #
+    # 5.3.2.3.  Percent-Encoding Normalization
+    #
+    install_modifier($whoami, 'around', build_percent_encoding_normalizer => sub {
+                       return {
+                               #
+                               # ./.. IRIs should be normalized by decoding any
+                               # percent-encoded octet sequence that corresponds to an unreserved
+                               # character, as described in section 2.3 of [RFC3986].
+                               #
+                               $pct_encoded => sub {
+                                 my $normalized = $_[2];
+                                 try {
+                                   my $octets = '';
+                                   while ($normalized =~ m/(?<=%)[^%]+/gp) {
+                                     $octets .= chr(hex(${^MATCH}))
+                                   }
+                                   my $decoded = MarpaX::RFC::RFC3629->new($octets)->output;
+                                   $normalized = $decoded if $decoded =~ $unreserved;
+                                 };
+                                 $normalized
+                               }
+                              }
+                     }
+                    );
+    #
+    # 5.3.2.4.  Path Segment Normalization
+    #
+    install_modifier($whoami, 'around', build_path_segment_normalizer => sub {
+                       #
+                       # IRI normalizers should remove dot-segments by
+                       # applying the remove_dot_segments algorithm to the path, as described
+                       # in section 5.2.4 of [RFC3986]
+                       #
+                       return {
+                               #
+                               # Arguments: $self, $field, $value, $lhs
+                               #
+                               relative_part => sub { $_[0]->remove_dot_segments($_[2]) },
+                               hier_part     => sub { $_[0]->remove_dot_segments($_[2]) }
+                              }
+                     }
+                    );
+  }
+  #
   # This is installed in the BNF package, so there should never be a conflict
   #
   install_modifier($bnf_package, 'fresh', $action_name => sub {
