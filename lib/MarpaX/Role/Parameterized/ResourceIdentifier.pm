@@ -438,6 +438,12 @@ role {
   # Even in the case of scheme, the spec says that it applies only
   # for IRI's using the _generic syntax. So _common has no normalizer at all.
   #
+  if ($is__common) {
+    foreach (@normalizer_name) {
+      install_modifier($whoami, 'fresh', "build_$_" => sub { return {} } );
+    }
+  }
+  #
   # For every inlined sub, the arguments are: ($self, $field, $value, $lhs) = @_
   #
   # This correspond to section:
