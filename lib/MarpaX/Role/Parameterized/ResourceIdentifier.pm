@@ -19,7 +19,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Data::Dumper;
-use Encode 2.21 qw/find_encoding/; # 2.21 for mime_name support
+use Encode 2.21 qw/find_encoding encode/; # 2.21 for mime_name support
 require UNIVERSAL::DOES unless defined &UNIVERSAL::DOES;
 use Scalar::Does;
 use Scalar::Util qw/blessed/;
@@ -45,20 +45,20 @@ use constant {
   LOGGER_ROLE => 'MooX::Role::Logger',
 };
 use constant {
-  RAW                         => 0,
-  DECODED                     => 1,
-  #
-  # For comparison ladder
-  #
-  CASE_NORMALIZED             => 2,
-  CHARACTER_NORMALIZED        => 3,
-  PERCENT_ENCODING_NORMALIZED => 4,
-  PATH_SEGMENT_NORMALIZED     => 5,
-  SCHEME_BASED_NORMALIZED     => 6,
-  _COUNT                      => 7
+  RAW                         => 0,               # Concat: yes, Normalize: no
+  UNESCAPED                   => 1,               # Concat: yes, Normalize: no
+  CASE_NORMALIZED             => 2,               # Concat: yes, Normalize: yes
+  CHARACTER_NORMALIZED        => 3,               # Concat: yes, Normalize: yes
+  PERCENT_ENCODING_NORMALIZED => 4,               # Concat: yes, Normalize: yes
+  PATH_SEGMENT_NORMALIZED     => 5,               # Concat: yes, Normalize: yes
+  SCHEME_BASED_NORMALIZED     => 6,               # Concat: yes, Normalize: yes
+  ESCAPED                     => 7,               # Concat: no,  Normalize: no
+  _COUNT                      => 8
 };
-our $indice_normalizer_start = CASE_NORMALIZED;
-our $indice_normalizer_end   = SCHEME_BASED_NORMALIZED;
+our $indice_concatenate_start = RAW;
+our $indice_concatenate_end   = SCHEME_BASED_NORMALIZED;
+our $indice_normalizer_start  = CASE_NORMALIZED;
+our $indice_normalizer_end    = SCHEME_BASED_NORMALIZED;
 
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
@@ -188,12 +188,6 @@ role {
   croak "[$type] $bnf_package->mapping must do Hashref[Str]"       unless HashRef->check($BNF{mapping}) && ! grep { ! Str->check($_) } keys %{$BNF{mapping}};
   croak "[$type] $bnf_package->pct_encoded must be like <...>'"    unless (! defined($BNF{pct_encoded})) || $BNF{pct_encoded} =~ /^<.*>$/;
   #
-  # If reserved is a RegexpRef, then unreserved must be a RegexpRef
-  #
-  if (RegexpRef->check($BNF{reserved})) {
-    croak "[$type] $bnf_package->unreserved must do RegexpRef when $bnf_package->reserved does RegexpRef" unless RegexpRef->check($BNF{unreserved});
-  }
-  #
   # A bnf package must provide correspondance between grammar symbols and the fields in the structure
   # A field can appear more than once as a value, but its semantic is fixed by us.
   # A symbol must be like <...>
@@ -210,12 +204,12 @@ role {
   my @not_found = grep { ! $fields{$_} } keys %fields;
   croak "[$type] Unmapped fields: @not_found" unless ! @not_found;
 
-  my $reserved    = $BNF{reserved};              # can be undef
-  my $unreserved  = $BNF{unreserved};            # can be undef
+  my $reserved    = $BNF{reserved};
+  my $unreserved  = $BNF{unreserved};
   my $pct_encoded = $BNF{pct_encoded} // '';
   my $is_utf8     = $BNF{is_utf8};
   my $action_name = $BNF{action_name};
-
+  my $reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;
   my $marpa_trace_values    = $setup->marpa_trace_values;
   my $marpa_trace           = $setup->marpa_trace;
@@ -247,12 +241,13 @@ role {
     # my ($self, $indice) = @_;
     return 'Invalid indice' if ! defined($_[1]);
     if    ($_[1] == RAW                        ) { return 'Raw value                        ' }
-    elsif ($_[1] == DECODED                    ) { return 'Decoded raw value                ' }
+    elsif ($_[1] == UNESCAPED                  ) { return 'Unescaped value                  ' }
     elsif ($_[1] == CASE_NORMALIZED            ) { return 'Case normalized value            ' }
     elsif ($_[1] == CHARACTER_NORMALIZED       ) { return 'Character normalized value       ' }
     elsif ($_[1] == PERCENT_ENCODING_NORMALIZED) { return 'Percent encoding mormalized value' }
     elsif ($_[1] == PATH_SEGMENT_NORMALIZED    ) { return 'Path segment normalized value    ' }
     elsif ($_[1] == SCHEME_BASED_NORMALIZED    ) { return 'Scheme based normalized value    ' }
+    elsif ($_[1] == ESCAPED                    ) { return 'Escaped value                    ' }
     else                                         { return 'Unknown indice                   ' }
   };
   my $max = _COUNT - 1;
@@ -289,20 +284,86 @@ role {
     #
     # Concatenate (not a reference == lexeme)
     #
-    foreach my $irc (0..$max) {
+    foreach my $irc ($indice_concatenate_start..$indice_concatenate_end) {
       do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
     }
     #
-    # Decoded output is explicitely done here on the raw output
+    # Unescaped section - to be done only if this is a percent encoded rule
     #
+    my $unescape_ok = 1;
     if ($lhs eq $pct_encoded) {
-      my $octets = '';
-      while ($rc->[DECODED] =~ m/(?<=%)[^%]+/gp) {
-        $octets .= chr(hex(${^MATCH}))
+      try {
+        my $octets = '';
+        while ($rc->[RAW] =~ m/(?<=%)[^%]+/gp) {
+          $octets .= chr(hex(${^MATCH}))
+        }
+        $rc->[UNESCAPED] = MarpaX::RFC::RFC3629->new($octets)->output
+      } catch {
+        if ($setup->with_logger) {
+          foreach (split(/\n/, "$_")) {
+            $self->_logger->warnff('%s: %s', $bnf_package, $_);
+          }
+        }
+        $rc->[UNESCAPED] = $rc->[RAW];
+        $unescape_ok = 0;
+        return
       }
-      $rc->[DECODED] = MarpaX::RFC::RFC3629->new($octets)->output;
     }
-
+    #
+    # Escape section - this must be done only once.
+    # We look to individual components, per def those not already escaped at the lexemes.
+    # If a character is not in the reserved section, then everything explicitely not in the unreserved
+    # section is escaped.
+    #
+    # We say character: this mean that when we try to encode, this is after the eventual decode.
+    # We take care of one exception: when the lhs is <pct encoded> and the decoding failed.
+    #
+    if (! $unescape_ok) {
+      #
+      # Can happen only in a percent-encoded LHS. It failed. So we keep the section as it it,
+      # just making sure it is uppercased to be compliant with the spec. Per def the percent-encoded
+      # section contains only ASCII characters, so uc() is ok.
+      #
+      $rc->[ESCAPED] = uc($rc->[RAW])
+    } else {
+      #
+      # If current LHS is <pct encoded>, then input is the decoded section, else the arguments
+      #
+      foreach ($lhs eq $pct_encoded ? $rc->[UNESCAPED] : @args) {
+        if (ref) {
+          #
+          # This make sure a section is not escaped twice
+          #
+          $rc->[ESCAPED] .= $_->[ESCAPED]
+        } else {
+          #
+          # This is a lexeme or a successully decoded <pct encoded> section
+          #
+          foreach (split '') {
+            if ($_ =~ $reserved_or_unreserved) {
+              $rc->[ESCAPED] .= $_
+            } else {
+              my $character = $_;
+              try {
+                $rc->[ESCAPED] .= do {
+                  #
+                  # This may croak
+                  #
+                  join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)))
+                }
+              } catch {
+                if ($setup->with_logger) {
+                  foreach (split(/\n/, "$_")) {
+                    $self->_logger->warnf('%s: %s', $bnf_package, $_);
+                  }
+                }
+                $rc->[ESCAPED] .= $character
+              }
+            }
+          }
+        }
+      }
+    }
     #
     # The normalization ladder
     #
@@ -402,14 +463,14 @@ role {
                   );
   #
   # For every structure field, we inject a method with an underscore in it
-  # Optional indice is which version we want, defaulting to DECODED
+  # Optional indice is which version we want, defaulting to ESCAPED
   #
   foreach (@fields) {
     my $field = $_;
     my $name = "_$field";
       install_modifier($whoami,
                        $whoami->can($name) ? 'around' : 'fresh',
-                       $name =>  sub { $_[1] //= DECODED, $_[0]->_structs->[$_[1]]->$field }
+                       $name =>  sub { $_[1] //= ESCAPED, $_[0]->_structs->[$_[1]]->$field }
                       );
   }
 };
