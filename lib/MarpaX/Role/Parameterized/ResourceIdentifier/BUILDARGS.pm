@@ -12,6 +12,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Encode qw/decode/;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types -all;
 use Moo::Role;
 use MooX::Role::Parameterized;
@@ -20,14 +21,19 @@ use Types::Standard -all;
 use Types::TypeTiny qw/StringLike/;
 use Types::Encodings qw/Bytes/;
 
+our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
+
+#
+# This role is consumed by _top.pm and _common.pm. Take care: _common is NOT inheriting
+# from _top.
 #
 # The "new" signature is common between all implementations:
 # _top    is  (StringLike|HashRef, Maybe[SchemeLike|AbsoluteReference|StringifiedAbsoluteReference])
 # _others are (StringLike|HashRef, Maybe[Str])
 #
 
-my $check_top    = compile(StringLike|HashRef, Maybe[SchemeLike|AbsoluteReference|StringifiedAbsoluteReference]);
-my $check_others = compile(StringLike|HashRef, Maybe[Str]);
+our $check_top    = compile(StringLike|HashRef, Maybe[SchemeLike|AbsoluteReference|StringifiedAbsoluteReference]);
+our $check_others = compile(StringLike|HashRef, Maybe[Str]);
 
 role {
   my $params = shift;
@@ -36,7 +42,7 @@ role {
   # Sanity checks on params
   # -----------------------
   my %PARAMS = ();
-  map { $PARAMS{$_} = $params->{$_} } qw/whoami type bnf_package normalizer/;
+  map { $PARAMS{$_} = $params->{$_} } qw/whoami type/;
   #
   # We will not insert methods in the role but in the calling package
   #
@@ -103,14 +109,16 @@ role {
     } else {
       $input = "$first";  # Eventual stringification
     }
-    #
-    # Copy from URI:
-    # Get rid of potential wrapping
-    #
-    $input =~ s/^<(?:URL:)?(.*)>$/$1/;
-    $input =~ s/^"(.*)"$/$1/;
-    $input =~ s/^\s+//;
-    $input =~ s/\s+$//;
+    if ($setup->uri_compat) {
+      #
+      # Copy from URI:
+      # Get rid of potential wrapping
+      #
+      $input =~ s/^<(?:URL:)?(.*)>$/$1/;
+      $input =~ s/^"(.*)"$/$1/;
+      $input =~ s/^\s+//;
+      $input =~ s/\s+$//;
+    }
     my $args = { input => $input, %rest };
     $args->{$second_argument} = $second if (! Undef->check($second));
 
@@ -118,7 +126,9 @@ role {
   };
   my $can_BUILDARGS = $whoami->can('BUILDARGS');
   if ($can_BUILDARGS) {
-    install_modifier($whoami, 'around', BUILDARGS => sub { my ($orig, $self) = (shift, shift); $self->$buildargs_sub(@_) });
+    my $around;
+    croak "[$type] $whoami must have an 'around' method (did you forgot to load Moo ?)" unless CodeRef->check($around = $whoami->can('around'));
+    &$around(BUILDARGS => sub { my ($orig, $self) = (shift, shift); $self->$buildargs_sub(@_) });
   } else {
     install_modifier($whoami, 'fresh', BUILDARGS => $buildargs_sub );
   }
