@@ -29,74 +29,48 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::Grammars;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
+use MarpaX::Role::Parameterized::ResourceIdentifier::BUILD;
 use MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
-use MooX::HandlesVia;
 use MooX::Role::Logger;
 use Types::Standard -all;
-use Types::Encodings qw/Bytes/;
 use Try::Tiny;
 use Role::Tiny;
 use Unicode::Normalize qw/normalize/;
 use constant {
   BNF_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BNF',
+  BUILD_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BUILD',
   BUILDARGS_ROLE => 'MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS',
   LOGGER_ROLE => 'MooX::Role::Logger',
 };
 use constant {
-  RAW                         => 0,               # Concat: yes, Normalize: no
-  UNESCAPED                   => 1,               # Concat: yes, Normalize: no
-  CASE_NORMALIZED             => 2,               # Concat: yes, Normalize: yes
-  CHARACTER_NORMALIZED        => 3,               # Concat: yes, Normalize: yes
-  PERCENT_ENCODING_NORMALIZED => 4,               # Concat: yes, Normalize: yes
-  PATH_SEGMENT_NORMALIZED     => 5,               # Concat: yes, Normalize: yes
-  SCHEME_BASED_NORMALIZED     => 6,               # Concat: yes, Normalize: yes
-  ESCAPED                     => 7,               # Concat: no,  Normalize: no
-  _COUNT                      => 8
+  RAW                         =>  0,               # Concat: yes, Normalize: no,  Convert: no
+  UNESCAPED                   =>  1,               # Concat: yes, Normalize: no,  Convert: no
+  URI_CONVERTED               =>  2,               # Concat: yes, Normalize: no,  Convert: yes
+  IRI_CONVERTED               =>  3,               # Concat: yes, Normalize: no,  Convert: yes
+  CASE_NORMALIZED             =>  4,               # Concat: yes, Normalize: yes, Convert: no
+  CHARACTER_NORMALIZED        =>  5,               # Concat: yes, Normalize: yes, Convert: no
+  PERCENT_ENCODING_NORMALIZED =>  6,               # Concat: yes, Normalize: yes, Convert: no
+  PATH_SEGMENT_NORMALIZED     =>  7,               # Concat: yes, Normalize: yes, Convert: no
+  SCHEME_BASED_NORMALIZED     =>  8,               # Concat: yes, Normalize: yes, Convert: no
+  ESCAPED                     =>  9,               # Concat: no,  Normalize: no,  Convert: no
+  _COUNT                      => 10
 };
+use MooX::Role::Parameterized;
+
 our $indice_concatenate_start = RAW;
 our $indice_concatenate_end   = SCHEME_BASED_NORMALIZED;
+
 our $indice_normalizer_start  = CASE_NORMALIZED;
 our $indice_normalizer_end    = SCHEME_BASED_NORMALIZED;
+
+our $indice_convertor_start   = URI_CONVERTED;
+our $indice_convertor_end     = IRI_CONVERTED;
 
 our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 our $grammars = MarpaX::Role::Parameterized::ResourceIdentifier::Grammars->instance;
 
-has _encoding               => ( is => 'ro',  isa => Str, predicate => 1, trigger => 1);
-has is_character_normalized => ( is => 'rwp', isa => Bool, default => sub { !!1 } );
-has input                   => ( is => 'rwp', isa => Str, trigger => 1);
-has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
-our @normalizer_name = qw/case_normalizer
-                          character_normalizer
-                          percent_encoding_normalizer
-                          path_segment_normalizer
-                          scheme_based_normalizer/;
-
-foreach (@normalizer_name) {
-  has $_ => ( is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => "build_$_",
-              handles_via => 'Hash',
-              handles => {
-                          "exists_$_"  => 'exists',
-                          "get_$_"     => 'get'
-                         }
-            )
-}
-
-sub output { $_[0]->_structs->[_COUNT-1]->_output }
-
-our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
-
-sub _trigger__encoding {
-  my ($self, $_encoding) = @_;
-  #
-  # Remember if the octets were in an UCS-based encoding
-  #
-  my $enc_mime_name = find_encoding($_encoding)->mime_name;
-  $self->_set__is_character_normalized(grep { $enc_mime_name eq $_ } @ucs_mime_name);
-}
-
-use MooX::Role::Parameterized;
 use MooX::Struct -rw,
   _common => [ output         => [ isa => Str,           default => sub {    '' } ], # Parse tree value
                scheme         => [ isa => Str|Undef,     default => sub { undef } ],
@@ -129,6 +103,46 @@ use MooX::Struct -rw,
                 segments      => [ isa => ArrayRef[Str], default => sub {  $setup->uri_compat ? [''] : [] } ],
               ];
 
+# ==================================================================================
+# Common
+# ==================================================================================
+our @normalizer_name = qw/case_normalizer
+                          character_normalizer
+                          percent_encoding_normalizer
+                          path_segment_normalizer
+                          scheme_based_normalizer/;
+our @convertor_name = qw/uri_convertor iri_convertor/;
+our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
+
+our %COMMON_ATTRIBUTES = (
+                          _encoding               => [ is => 'ro',  isa => Str,  predicate => 1, trigger => 1],
+                          is_character_normalized => [ is => 'rwp', isa => Bool, default => sub { !!1 }      ],
+                          input                   => [ is => 'rwp', isa => Str                               ],
+                          _structs                => [ is => 'rw',  isa => ArrayRef[Object]                  ]
+                         );
+do { $COMMON_ATTRIBUTES{$_} = [ is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => "build_$_" ] } for (@normalizer_name);
+do { $COMMON_ATTRIBUTES{$_} = [ is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => "build_$_" ] } for (@convertor_name);
+our %COMMON_METHODS = (
+                       _trigger__encoding => sub {
+                         my ($self, $_encoding) = @_;
+                         #
+                         # Remember if the octets were in an UCS-based encoding
+                         #
+                         my $enc_mime_name = find_encoding($_encoding)->mime_name;
+                         $self->_set__is_character_normalized(grep { $enc_mime_name eq $_ } @ucs_mime_name);
+                       }
+                      );
+do { $COMMON_METHODS{"build_$_"} = sub { return {} } } for (@normalizer_name);
+do { $COMMON_METHODS{"build_$_"} = sub { return {} } } for (@convertor_name);
+
+# ==================================================================================
+# Generic
+# ==================================================================================
+our %GENERIC_ATTRIBUTES = (
+                           is_reg_name_as_domain_name => [ is => 'ro', isa => Bool,     default => sub { !!0 } ],
+                          );
+our %GENERIC_METHODS = ();
+
 role {
   my $params = shift;
 
@@ -153,6 +167,7 @@ role {
   # There are only two things that differ between URI and IRI:
   # - the grammar
   # - the normalizers
+  # - the convertors
   #
   croak "[$type] bnf_package must exist and do Str" unless Str->check($PARAMS{bnf_package});
   my $bnf_package = $PARAMS{bnf_package};
@@ -160,14 +175,11 @@ role {
   #
   # Eventual extends should be done asap
   #
-  if (exists($params->{extends})) {
-    croak "[$type] extends must do ArrayRef" unless ArrayRef->check($params->{extends});
+  if (exists $params->{-extends}) {
+    croak "[$type] -extends must do ArrayRef" unless ArrayRef->check($params->{-extends});
     my $extends_sub;
     croak "[$type] $whoami must can extends (did you forgot to use Moo ?)" unless $extends_sub = $whoami->can('extends');
-    &$extends_sub(@{$params->{extends}});
-    #"Moo"->_set_superclasses($klass, @parents);
-    #"Moo"->_maybe_reset_handlemoose($klass);
-    # extends(@{$params->{extends}});
+    &$extends_sub(@{$params->{-extends}});
   }
   #
   # ----------------------------
@@ -229,11 +241,6 @@ role {
     local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $bnf_package;
     tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   }
-  # -----
-  # Roles
-  # -----
-  BUILDARGS_ROLE->apply({whoami => $whoami, type => 'NotTop', second_argument => 'base'}, target=> $whoami);
-  Role::Tiny->apply_roles_to_package($whoami, LOGGER_ROLE) unless $whoami->DOES(LOGGER_ROLE);
   #
   # -------------------------------------
   # Helpers used internally, not exported
@@ -249,12 +256,21 @@ role {
     elsif ($_[1] == PATH_SEGMENT_NORMALIZED    ) { return 'Path segment normalized value    ' }
     elsif ($_[1] == SCHEME_BASED_NORMALIZED    ) { return 'Scheme based normalized value    ' }
     elsif ($_[1] == ESCAPED                    ) { return 'Escaped value                    ' }
+    elsif ($_[1] == URI_CONVERTED              ) { return 'URI converted value              ' }
+    elsif ($_[1] == IRI_CONVERTED              ) { return 'IRI converted value              ' }
     else                                         { return 'Unknown indice                   ' }
   };
   my $max = _COUNT - 1;
   # -------------
   # Inlined stubs
   # -------------
+  #
+  my $call_by_name = sub {
+    # my ($self, $field, $value, $lhs, $name) = @_;
+    my $name = pop;
+    my $criteria = $_[1] || $_[3] || '';
+    exists $_[0]->$name->{$criteria} ? $_[0]->$name->{$criteria}->(@_) : $_[2]
+  };
   #
   # Normalizers
   #
@@ -263,18 +279,25 @@ role {
     if (($_ < $indice_normalizer_start) || ($_ > $indice_normalizer_end)) {
       push(@normalizer_sub, undef) # No normalizer at this indice
     } else {
-      my $inormalizer = $_ - $indice_normalizer_start;
-      my $builder = "build_$normalizer_name[$inormalizer]";
-      my $exists = "exists_$normalizer_name[$inormalizer]";
-      my $get = "get_$normalizer_name[$inormalizer]";
-      push(@normalizer_sub, sub {
-             my ($self, $field, $value, $lhs) = @_;
-             my $criteria = $field || $lhs || '';
-             $self->$exists($criteria) ? $self->$get($criteria)->($self, $field, $value, $lhs) : $value
-           }
-          );
+      my $normalizer_name = $normalizer_name[$_ - $indice_normalizer_start];
+      push(@normalizer_sub, sub { &$call_by_name(@_, $normalizer_name) } );
     }
   }
+  #
+  # Convertors
+  #
+  my @convertor_sub = ();
+  foreach (0..$max) {
+    if (($_ < $indice_convertor_start) || ($_ > $indice_convertor_end)) {
+      push(@convertor_sub, undef) # No convertor at this indice
+    } else {
+      my $convertor_name = $convertor_name[$_ - $indice_normalizer_start];
+      push(@convertor_sub, sub { &$call_by_name(@_, $convertor_name) } );
+    }
+  }
+  #
+  # Convertors
+  #
   #
   # Marpa inner action
   #
@@ -312,7 +335,7 @@ role {
     }
     #
     # Escape section - this must be done only once.
-    # We look to individual components, per def those not already escaped at the lexemes.
+    # We look to individual components, per def those not already escaped are the lexemes.
     # If a character is not in the reserved section, then everything explicitely not in the unreserved
     # section is escaped.
     #
@@ -374,6 +397,15 @@ role {
       #
       do { $rc->[$inormalizer] = $normalizer_sub[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
     }
+    #
+    # The convertors. Every entry may have its own converter.
+    #
+    foreach my $iconvertor ($indice_convertor_start..$indice_convertor_end) {
+      #
+      # For each converted value, we apply the previous convertors in order
+      #
+      $rc->[$iconvertor] = $convertor_sub[$iconvertor]->($self, $field, $rc->[$iconvertor], $lhs);
+    }
     $rc
   };
   #
@@ -400,48 +432,61 @@ role {
       }
     }
   };
+  # -----
+  # Roles
+  # -----
+  if ($is__common) {
+    #
+    # Generic inherits from Common, so no need to install twice the role
+    #
+    BUILD_ROLE->apply({whoami => $whoami, input_attribute_name => 'input', input_trigger_name => '_trigger_input'}, target=> $whoami);
+    BUILDARGS_ROLE->apply({whoami => $whoami, type => 'NotTop', second_argument => '_second_argument'}, target=> $whoami);
+  }
+  Role::Tiny->apply_roles_to_package($whoami, LOGGER_ROLE) unless $whoami->DOES(LOGGER_ROLE);
   #
   # ----------
   # Injections
   # ----------
   #
+  my $has;
+  croak "[$type] $whoami must have an 'has' method (did you forgot to load Moo ?)" unless CodeRef->check($has = $whoami->can('has'));
+  my $around;
+  croak "[$type] $whoami must have an 'around' method (did you forgot to load Moo ?)" unless CodeRef->check($around = $whoami->can('around'));
   if ($is__common) {
-    install_modifier($whoami, 'fresh',  grammar => sub { $BNF{grammar} });
-    install_modifier($whoami, 'fresh',  bnf => sub { $BNF{bnf} });
-    install_modifier($whoami, 'fresh',  unreserved => sub { $BNF{unreserved} });
-    install_modifier($whoami, 'fresh', _trigger_input => $trigger_input);
+
+    do { &$has           (                   $_ => @{$COMMON_ATTRIBUTES{$_}}) } for keys %COMMON_ATTRIBUTES;
+    do { install_modifier($whoami, 'fresh',  $_ =>   $COMMON_METHODS   {$_})  } for keys %COMMON_METHODS;
+
+    install_modifier($whoami, 'fresh',  grammar       => sub { $BNF{grammar} });
+    install_modifier($whoami, 'fresh',  bnf           => sub { $BNF{bnf} });
+    install_modifier($whoami, 'fresh',  unreserved    => sub { $BNF{unreserved} });
+    install_modifier($whoami, 'fresh', _trigger_input => $trigger_input );
   } else {
-    install_modifier($whoami, 'around',  grammar => sub { $BNF{grammar} });
-    install_modifier($whoami, 'around',  bnf => sub { $BNF{bnf} });
-    install_modifier($whoami, 'around',  unreserved => sub { $BNF{unreserved} });
-    install_modifier($whoami, 'around', _trigger_input => sub {
-                       my ($orig, $self, $input) = @_;
-                       try {
-                         $self->$trigger_input($input);
-                       } catch {
-                         if ($setup->uri_compat) {
-                           if ($setup->with_logger) {
-                             foreach (split(/\n/, "$_")) {
-                               $self->_logger->tracef('%s: %s', $bnf_package, $_);
-                             }
-                           }
-                           $self->$orig($input);
-                         } else {
-                           croak $_;
-                         }
-                       }
+
+    do { &$has           (                   $_ => @{$GENERIC_ATTRIBUTES{$_}}) } for keys %GENERIC_ATTRIBUTES;
+    do { install_modifier($whoami, 'fresh',  $_ =>   $GENERIC_METHODS   {$_})  } for keys %GENERIC_METHODS;
+
+    &$around(grammar        => sub { $BNF{grammar} });
+    &$around(bnf            => sub { $BNF{bnf} });
+    &$around(unreserved     => sub { $BNF{unreserved} });
+    &$around(_trigger_input => sub {
+               my ($orig, $self, $input) = @_;
+               try {
+                 $self->$trigger_input($input);
+               } catch {
+                 if ($setup->uri_compat) {
+                   if ($setup->with_logger) {
+                     foreach (split(/\n/, "$_")) {
+                       $self->_logger->tracef('%s: %s', $bnf_package, $_);
                      }
-                    );
-  }
-  #
-  # Normalizers: their semantic is known in advance for _generic.
-  # Even in the case of scheme, the spec says that it applies only
-  # for IRI's using the _generic syntax. So _common has no normalizer at all.
-  #
-  if ($is__common) {
-    foreach (@normalizer_name) {
-      install_modifier($whoami, 'fresh', "build_$_" => sub { return {} } );
-    }
+                   }
+                   $self->$orig($input);
+                 } else {
+                   croak $_;
+                 }
+               }
+             }
+            );
   }
   #
   # For every inlined sub, the arguments are: ($self, $field, $value, $lhs) = @_
@@ -455,86 +500,87 @@ role {
     #
     # 5.3.2.1.  Case Normalization
     #
-    install_modifier($whoami, 'around', build_case_normalizer => sub {
-                       return {
-                               #
-                               # For all IRIs, the hexadecimal digits within a percent-encoding
-                               # triplet (e.g., "%3a" versus "%3A") are case-insensitive and therefore
-                               # should be normalized to use uppercase letters for the digits A-F.
-                               #
-                               $pct_encoded => sub { uc($_[2]) },
-                               #
-                               # When an IRI uses components of the _generic syntax, the component
-                               # syntax equivalence rules always apply; namely, that the scheme and
-                               # US-ASCII only host are case insensitive and therefore should be
-                               # normalized to lowercase.
-                               #
-                               scheme => sub { lc($_[2]) },
-                               host   => sub { $_[2] =~ /[^\x{0}-\x{7F}]/ ? $_[2] : lc($_[2]) }
-                              }
-                     }
-                    );
+    &$around(
+             build_case_normalizer => sub {
+               return {
+                       #
+                       # For all IRIs, the hexadecimal digits within a percent-encoding
+                       # triplet (e.g., "%3a" versus "%3A") are case-insensitive and therefore
+                       # should be normalized to use uppercase letters for the digits A-F.
+                       #
+                       $pct_encoded => sub { uc($_[2]) },
+                       #
+                       # When an IRI uses components of the _generic syntax, the component
+                       # syntax equivalence rules always apply; namely, that the scheme and
+                       # US-ASCII only host are case insensitive and therefore should be
+                       # normalized to lowercase.
+                       #
+                       scheme => sub { lc($_[2]) },
+                       host   => sub { $_[2] =~ /[^\x{0}-\x{7F}]/ ? $_[2] : lc($_[2]) }
+                      }
+             }
+            );
     #
     # 5.3.2.2.  Character Normalization
     #
-    install_modifier($whoami, 'around', build_character_normalizer => sub {
-                       return {
-                               #
-                               # Equivalence of IRIs MUST rely on the assumption that IRIs are
-                               # appropriately pre-character-normalized rather than apply character
-                               # normalization when comparing two IRIs.  The exceptions are conversion
-                               # from a non-digital form, and conversion from a non-UCS-based
-                               # character encoding to a UCS-based character encoding. In these cases,
-                               # NFC or a normalizing transcoder using NFC MUST be used for
-                               # interoperability.
-                               #
-                               output => sub { $_[0]->is_character_normalized ? $_[2] : normalize('NFC', $_[2]) }
-                              }
-                     }
-                    );
+    &$around(build_character_normalizer => sub {
+               return {
+                       #
+                       # Equivalence of IRIs MUST rely on the assumption that IRIs are
+                       # appropriately pre-character-normalized rather than apply character
+                       # normalization when comparing two IRIs.  The exceptions are conversion
+                       # from a non-digital form, and conversion from a non-UCS-based
+                       # character encoding to a UCS-based character encoding. In these cases,
+                       # NFC or a normalizing transcoder using NFC MUST be used for
+                       # interoperability.
+                       #
+                       output => sub { $_[0]->is_character_normalized ? $_[2] : normalize('NFC', $_[2]) }
+                      }
+             }
+            );
     #
     # 5.3.2.3.  Percent-Encoding Normalization
     #
-    install_modifier($whoami, 'around', build_percent_encoding_normalizer => sub {
-                       return {
-                               #
-                               # ./.. IRIs should be normalized by decoding any
-                               # percent-encoded octet sequence that corresponds to an unreserved
-                               # character, as described in section 2.3 of [RFC3986].
-                               #
-                               $pct_encoded => sub {
-                                 my $normalized = $_[2];
-                                 try {
-                                   my $octets = '';
-                                   while ($normalized =~ m/(?<=%)[^%]+/gp) {
-                                     $octets .= chr(hex(${^MATCH}))
-                                   }
-                                   my $decoded = MarpaX::RFC::RFC3629->new($octets)->output;
-                                   $normalized = $decoded if $decoded =~ $unreserved;
-                                 };
-                                 $normalized
-                               }
-                              }
-                     }
-                    );
+    &$around(build_percent_encoding_normalizer => sub {
+               return {
+                       #
+                       # ./.. IRIs should be normalized by decoding any
+                       # percent-encoded octet sequence that corresponds to an unreserved
+                       # character, as described in section 2.3 of [RFC3986].
+                       #
+                       $pct_encoded => sub {
+                         my $normalized = $_[2];
+                         try {
+                           my $octets = '';
+                           while ($normalized =~ m/(?<=%)[^%]+/gp) {
+                             $octets .= chr(hex(${^MATCH}))
+                           }
+                           my $decoded = MarpaX::RFC::RFC3629->new($octets)->output;
+                           $normalized = $decoded if $decoded =~ $unreserved;
+                         };
+                         $normalized
+                       }
+                      }
+             }
+            );
     #
     # 5.3.2.4.  Path Segment Normalization
     #
-    install_modifier($whoami, 'around', build_path_segment_normalizer => sub {
+    &$around(build_path_segment_normalizer => sub {
+               #
+               # IRI normalizers should remove dot-segments by
+               # applying the remove_dot_segments algorithm to the path, as described
+               # in section 5.2.4 of [RFC3986]
+               #
+               return {
                        #
-                       # IRI normalizers should remove dot-segments by
-                       # applying the remove_dot_segments algorithm to the path, as described
-                       # in section 5.2.4 of [RFC3986]
+                       # Arguments: $self, $field, $value, $lhs
                        #
-                       return {
-                               #
-                               # Arguments: $self, $field, $value, $lhs
-                               #
-                               relative_part => sub { $_[0]->remove_dot_segments($_[2]) },
-                               hier_part     => sub { $_[0]->remove_dot_segments($_[2]) }
-                              }
-                     }
-                    );
+                       relative_part => sub { $_[0]->remove_dot_segments($_[2]) },
+                       hier_part     => sub { $_[0]->remove_dot_segments($_[2]) }
+                      }
+             }
+            );
   }
   #
   # This is installed in the BNF package, so there should never be a conflict
@@ -572,16 +618,33 @@ role {
   foreach (@fields) {
     my $field = $_;
     my $name = "_$field";
-    my $can = $whoami->can($name);
-    install_modifier($whoami,
-                     $can ? 'around' : 'fresh',
-                     $name => $can ?
-                     sub { $_[1]->_structs->[$_[2] // ESCAPED]->$field }   # $orig, $self, $indice
-                     :
-                     sub { $_[0]->_structs->[$_[1] // ESCAPED]->$field }   # $self, $indice
-                    );
+    if (! $whoami->can($name)) {
+      install_modifier($whoami, 'fresh', $name => sub { $_[0]->_structs->[$_[1] // ESCAPED]->$field });   # $self, $indice
+    } else {
+       &$around($name => sub { $_[1]->_structs->[$_[2] // ESCAPED]->$field });   # $orig, $self, $indice
+    }
   }
 };
+#
+# Instance methods common to any Resource Identifier
+#
+sub output {
+  my ($self, $what) = @_;
+
+  croak "Invalid undef argument" if (! defined($what));
+
+  if    ($what eq 'RAW'                        ) { return $self->_structs->[                        RAW]->output }
+  elsif ($what eq 'UNESCAPED'                  ) { return $self->_structs->[                  UNESCAPED]->output }
+  elsif ($what eq 'CASE_NORMALIZED'            ) { return $self->_structs->[            CASE_NORMALIZED]->output }
+  elsif ($what eq 'CHARACTER_NORMALIZED'       ) { return $self->_structs->[       CHARACTER_NORMALIZED]->output }
+  elsif ($what eq 'PERCENT_ENCODING_NORMALIZED') { return $self->_structs->[PERCENT_ENCODING_NORMALIZED]->output }
+  elsif ($what eq 'PATH_SEGMENT_NORMALIZED'    ) { return $self->_structs->[    PATH_SEGMENT_NORMALIZED]->output }
+  elsif ($what eq 'SCHEME_BASED_NORMALIZED'    ) { return $self->_structs->[    SCHEME_BASED_NORMALIZED]->output }
+  elsif ($what eq 'ESCAPED'                    ) { return $self->_structs->[                    ESCAPED]->output }
+  elsif ($what eq 'URI_CONVERTED'              ) { return $self->_structs->[              URI_CONVERTED]->output }
+  elsif ($what eq 'IRI_CONVERTED'              ) { return $self->_structs->[              IRI_CONVERTED]->output }
+  else                                           { croak "Invalid argument $what"     }
+}
 #
 # Class methods common to any Resource Identifier
 #
