@@ -9,6 +9,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::_top;
 
 # AUTHORITY
 
+use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types -all;
 use Carp qw/croak/;
 use Log::Any qw/$log/;
@@ -26,6 +27,7 @@ use MooX::Role::Parameterized::With 'MarpaX::Role::Parameterized::ResourceIdenti
       second_argument => 'scheme',
      };
 
+our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 my $_CALLER = undef;
 
 sub import { $_CALLER = caller }
@@ -61,8 +63,12 @@ sub _new_from_generic {
     use_module($subclass);
     $self = $subclass->new(\%args);
   } catch {
-    foreach (split(/\n/, "$_")) {
-      $log->tracef('%s: %s', $subclass, $_);
+    if ($setup->uri_compat) {
+      foreach (split(/\n/, "$_")) {
+        $log->tracef('%s: %s', $subclass, $_);
+      }
+    } else {
+      croak $_;
     }
     return;
   };
