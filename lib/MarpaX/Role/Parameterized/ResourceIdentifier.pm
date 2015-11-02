@@ -195,13 +195,12 @@ role {
   # Make sure bnf instance really return what we want
   #
   my %BNF = ();
-  map { $BNF{$_} = $bnf_instance->$_} qw/grammar bnf reserved unreserved pct_encoded is_utf8 mapping action_name/;
+  map { $BNF{$_} = $bnf_instance->$_} qw/grammar bnf reserved unreserved pct_encoded mapping action_name/;
   croak "[$type] $bnf_package->grammar must do InstanceOf['Marpa::R2::Scanless::G']"  unless blessed($BNF{grammar}) && blessed($BNF{grammar}) eq 'Marpa::R2::Scanless::G';
   croak "[$type] $bnf_package->bnf must do Str"                    unless Str->check($BNF{bnf});
   croak "[$type] $bnf_package->reserved must do RegexpRef"         unless RegexpRef->check($BNF{reserved});
   croak "[$type] $bnf_package->unreserved must do RegexpRef"       unless RegexpRef->check($BNF{unreserved});
   croak "[$type] $bnf_package->pct_encoded must do Str|Undef"      unless Str->check($BNF{pct_encoded}) || Undef->check($BNF{pct_encoded});
-  croak "[$type] $bnf_package->is_utf8 must do Bool"               unless Bool->check($BNF{is_utf8});
   croak "[$type] $bnf_package->mapping must do Hashref[Str]"       unless HashRef->check($BNF{mapping}) && ! grep { ! Str->check($_) } keys %{$BNF{mapping}};
   croak "[$type] $bnf_package->pct_encoded must be like <...>'"    unless (! defined($BNF{pct_encoded})) || $BNF{pct_encoded} =~ /^<.*>$/;
   #
@@ -224,7 +223,6 @@ role {
   my $reserved    = $BNF{reserved};
   my $unreserved  = $BNF{unreserved};
   my $pct_encoded = $BNF{pct_encoded} // '';
-  my $is_utf8     = $BNF{is_utf8};
   my $action_name = $BNF{action_name};
   my $reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;

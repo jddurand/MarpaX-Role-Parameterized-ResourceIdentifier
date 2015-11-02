@@ -10,7 +10,6 @@ requires 'bnf';
 requires 'reserved';
 requires 'unreserved';
 requires 'pct_encoded';
-requires 'is_utf8';
 requires 'mapping';
 
 1;
