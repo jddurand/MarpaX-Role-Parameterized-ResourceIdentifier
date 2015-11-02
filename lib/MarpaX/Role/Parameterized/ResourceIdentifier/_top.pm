@@ -30,10 +30,11 @@ use MooX::Role::Parameterized::With 'MarpaX::Role::Parameterized::ResourceIdenti
      };
 
 our $check_new_abs = compile(
-                             StringLike,
-                             ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier'],
-                             Maybe[Bool]
+                             StringLike|HashRef|ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier'],
+                             StringLike|HashRef|ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier']
                             );
+our $check_is_ri = compile(ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier']);
+
 our $setup          = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
 my $_CALLER         = undef;
 
@@ -146,8 +147,17 @@ sub new {
 };
 
 sub new_abs {
-  my $class = shift;
-  my ($ref, $base, $normalize) = $check_new_abs->($_[0], $_[1], $_[2]);
+  my ($class, $ref, $base, %args) = @_;
+
+  $check_new_abs->($ref, $base);
+  my $normalize = $args{normalize} // 0;
+  my $strict    = $args{strict} // 1;
+
+  #
+  # Make objects out of parameters if there are not yet consumers of MarpaX::Role::Parameterized::ResourceIdentifier
+  #
+  $ref  = $class->new($ref)  unless eval { $check_is_ri->($ref) };
+  $base = $class->new($base) unless eval { $check_is_ri->($base) };
   #
   # 5.2.1.  Pre-parse the Base URI
   #
@@ -159,22 +169,121 @@ sub new_abs {
   #
   # ./.. Normalization of the base URI, as described in Sections 6.2.2 and 6.2.3, is optional
   #
-  my $struct = $base->struct($normalize ? $base->indice_normalized : $base->indice_raw);
+  my $base_indice = $normalize ? $base->indice_normalized : $base->indice_default;
+  my %base = (
+              scheme    => $base->_scheme($base_indice),
+              authority => $base->can('_authority') ? $base->_authority($base_indice) : undef,
+              path      => $base->can('_path')      ? $base->_path     ($base_indice) : '',
+              query     => $base->can('_query')     ? $base->_query    ($base_indice) : undef,
+              fragment  => $base->can('_fragment')  ? $base->_fragment ($base_indice) : undef,
+              segments  => $base->can('_segments')  ? $base->_segments ($base_indice) : $setup->uri_compat ? [''] : []
+             );
 
   # 5.2.2.  Transform References
   #
   # -- The URI reference is parsed into the five URI components
   # --
   #
-  $ref = $class->new($ref);
+  my %ref = (
+             scheme    => $ref->_scheme,
+             authority => $ref->can('_authority') ? $ref->_authority : undef,
+             path      => $ref->can('_path')      ? $ref->_path      : '',
+             query     => $ref->can('_query')     ? $ref->_query     : undef,
+             fragment  => $ref->can('_fragment')  ? $ref->_fragment  : undef
+            );
+  #
+  # -- A non-strict parser may ignore a scheme in the reference
+  # -- if it is identical to the base URI's scheme.
+  #
+  if ((! $strict) && ($ref{scheme} eq $base{scheme})) {
+    $ref{scheme} = undef;
+  }
+  my $RI = 'MarpaX::Role::Parameterized::ResourceIdentifier';
+  my %target = ();
+  if (defined($ref{scheme})) {
+    $target{scheme}    = $ref{scheme};
+    $target{authority} = $ref{authority};
+    $target{path}      = $RI->remove_dot_segments($ref{path});
+    $target{query}     = $ref{query};
+  } else {
+    if (defined($ref{authority})) {
+      $target{authority} = $ref{authority};
+      $target{path}      = $RI->remove_dot_segments($ref{path});
+      $target{query}     = $ref{query};
+    } else {
+      if (! length($ref{path})) {
+        $target{path} = $base{path};
+        if (defined($ref{query})) {
+          $target{query} = $ref{query};
+        } else {
+          $target{query} = $base{query};
+        }
+      } else {
+        if (substr($ref{path}, 0, 1) eq '/') {
+          $target{path} = $RI->remove_dot_segments($ref{path});
+        } else {
+          $target{path} = __PACKAGE__->merge(\%base, \%ref);
+          $target{path} = $RI->remove_dot_segments($target{path});
+        }
+        $target{query} = $ref{query};
+      }
+      $target{authority} = $base{authority};
+    }
+    $target{scheme} = $base{scheme};
+  }
+  $target{fragment} = $ref{fragment};
+  #
+  # Recompose
+  #
+  my $target = '';
+  if (defined($target{scheme})) {
+    $target .= $target{scheme};
+    $target .= ':'
+  }
+  if (defined($target{authority})) {
+    $target .= '//';
+    $target .= $target{authority};
+  }
+  $target .= $target{path};
+  if (defined($target{query})) {
+    $target .= '?';
+    $target .= $target{query};
+  }
+  if (defined($target{fragment})) {
+    $target .= '#';
+    $target .= $target{fragment};
+  }
 
-  croak 'base uri must consume the generic syntax' unless (! grep { $struct->can($_) } qw/scheme authority path query fragment/);
-  my $scheme    = $struct->scheme;
-  my $authority = $struct->authority;
-  my $path      = $struct->path;
-  my $query     = $struct->query;
-  my $fragment  = $struct->fragment;
+  $class->new($target)
+}
 
+#
+# 5.2.3.  Merge Paths
+#
+#
+sub merge {
+  my ($class, $base_hashref, $ref_hashref) = @_;
+  #
+  # If the base URI has a defined authority component and an empty
+  # path, then return a string consisting of "/" concatenated with the
+  # reference's path; otherwise,
+  #
+  if (defined($base_hashref->{authority}) && ! length($base_hashref->{path})) {
+    return '/' . $ref_hashref->{path}
+  }
+  #
+  # return a string consisting of the reference's path component
+  # appended to all but the last segment of the base URI's path (i.e.,
+  # excluding any characters after the right-most "/" in the base URI
+  # path, or excluding the entire base URI path if it does not contain
+  # any "/" characters).
+  #
+  my @segments = @{$base_hashref->{segments}};
+  shift(@segments) if ($setup->uri_compat);      # The first empty ''
+  pop(@segments);
+  push(@segments, $ref_hashref->{path}) if (length($ref_hashref->{path}));
+  unshift(@segments, '') if (@segments);         # To have the first '/'
+  join('/', @segments)
 }
 
 1;

@@ -83,11 +83,6 @@ use MooX::Struct -rw,
                 segment       => [ isa => Str|Undef,     default => sub { undef } ],
                 authority     => [ isa => Str|Undef,     default => sub { undef } ],
                 path          => [ isa => Str|Undef,     default => sub { undef } ],
-                path_abempty  => [ isa => Str|Undef,     default => sub { undef } ],
-                path_absolute => [ isa => Str|Undef,     default => sub { undef } ],
-                path_noscheme => [ isa => Str|Undef,     default => sub { undef } ],
-                path_rootless => [ isa => Str|Undef,     default => sub { undef } ],
-                path_empty    => [ isa => Str|Undef,     default => sub { undef } ],
                 relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
                 relative_part => [ isa => Str|Undef,     default => sub { undef } ],
                 userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
@@ -267,13 +262,6 @@ role {
   # Inlined stubs
   # -------------
   #
-  my $call_by_name = sub {
-    # my ($self, $field, $value, $lhs, $name) = @_;
-    my $name = pop;
-    my $criteria = $_[1] || $_[3] || '';
-    exists $_[0]->$name->{$criteria} ? $_[0]->$name->{$criteria}->(@_) : $_[2]
-  };
-  #
   # Normalizers
   #
   my @normalizer_sub = ();
@@ -281,8 +269,12 @@ role {
     if (($_ < $indice_normalizer_start) || ($_ > $indice_normalizer_end)) {
       push(@normalizer_sub, undef) # No normalizer at this indice
     } else {
-      my $normalizer_name = $normalizer_name[$_ - $indice_normalizer_start];
-      push(@normalizer_sub, sub { &$call_by_name(@_, $normalizer_name) } );
+      my $name = $normalizer_name[$_ - $indice_normalizer_start];
+      push(@normalizer_sub, sub {
+             my $criteria = $_[1] || $_[3] || '';
+             exists $_[0]->$name->{$criteria} ? $_[0]->$name->{$criteria}->(@_) : $_[2]
+           }
+          );
     }
   }
   #
@@ -293,13 +285,14 @@ role {
     if (($_ < $indice_convertor_start) || ($_ > $indice_convertor_end)) {
       push(@convertor_sub, undef) # No convertor at this indice
     } else {
-      my $convertor_name = $convertor_name[$_ - $indice_normalizer_start];
-      push(@convertor_sub, sub { &$call_by_name(@_, $convertor_name) } );
+      my $name = $convertor_name[$_ - $indice_normalizer_start];
+      push(@convertor_sub, sub {
+             my $criteria = $_[1] || $_[3] || '';
+             exists $_[0]->$name->{$criteria} ? $_[0]->$name->{$criteria}->(@_) : $_[2]
+           }
+          );
     }
   }
-  #
-  # Convertors
-  #
   #
   # Marpa inner action
   #
@@ -308,7 +301,7 @@ role {
     my ($self, $lhs, $field, @args) = @_;
     my $rc = [ ('') x _COUNT ];
     #
-    # Concatenate (not a reference == lexeme)
+    # Concatenate
     #
     foreach my $irc ($indice_concatenate_start..$indice_concatenate_end) {
       do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
@@ -630,15 +623,41 @@ role {
 #
 # Instance methods common to any Resource Identifier
 #
-sub output            { $_[0]->_structs->[$_[1]]->output }
-sub struct            { $_[0]->_structs->[$_[1]]         }
+sub struct_by_type           { $_[0]->_structs->[$_[0]->indice($_[1])] }
+sub output_by_type           { $_[0]->struct_by_type($_[1])->output }
+
+sub struct_by_indice         { $_[0]->_structs->[$_[1]] }
+sub output_by_indice         { $_[0]->struct_by_indice($_[1])->output }
+
+sub recompose {
+  my $scheme   = $_[0]->_scheme   // '';
+  my $opaque   = $_[0]->_opaque   // '';
+  my $fragment = $_[0]->_fragment // '';
+
+  my $result = '';
+  $result .= "$scheme:"   if (length($scheme));
+  $result .= "$opaque"    if (length($opaque));
+  $result .= "#$fragment" if (length($fragment));
+  $result
+}
+
 #
 # Class methods common to any Resource Identifier
 #
-sub indice_raw        { __PACKAGE__->indice('RAW') }
-sub indice_escaped    { __PACKAGE__->indice('ESCAPED') }
-sub indice_unescaped  { __PACKAGE__->indice('UNESCAPED') }
-sub indice_normalized { __PACKAGE__->indice('SCHEME_BASED_NORMALIZED') }
+sub indice_raw                         {                            RAW }
+sub indice_unescaped                   {                      UNESCAPED }
+sub indice_case_normalized             {                CASE_NORMALIZED }
+sub indice_character_normalized        {           CHARACTER_NORMALIZED }
+sub indice_percent_encoding_normalized {    PERCENT_ENCODING_NORMALIZED }
+sub indice_path_segment_normalized     {        PATH_SEGMENT_NORMALIZED }
+sub indice_escaped                     {                        ESCAPED }
+sub indice_uri_converted               {                  URI_CONVERTED }
+sub indice_iri_converted               {                  IRI_CONVERTED }
+#
+# The general normalized indice correspond to the latest of the normalizers
+#
+sub indice_default                     {               indice_escaped() }
+sub indice_normalized                  {         $indice_normalizer_end }
 sub indice {
   my ($class, $what) = @_;
 
@@ -674,7 +693,7 @@ sub percent_encode {
 }
 
 sub remove_dot_segments {
-  my ($self, $input) = @_;
+  my ($class, $input) = @_;
 
   #
   # 1.  The input buffer is initialized with the now-appended path
