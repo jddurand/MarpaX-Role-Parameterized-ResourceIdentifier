@@ -130,6 +130,10 @@ our %COMMON_METHODS = (
                          #
                          my $enc_mime_name = find_encoding($_encoding)->mime_name;
                          $self->_set__is_character_normalized(grep { $enc_mime_name eq $_ } @ucs_mime_name);
+                       },
+                       is_absolute => sub {
+                         my $raw = $_[0]->_structs->[RAW];
+                         Str->check($raw->scheme) && $raw->can('hier_part') && Str->check($raw->hier_part)
                        }
                       );
 do { $COMMON_METHODS{"build_$_"} = sub { return {} } } for (@normalizer_name);
