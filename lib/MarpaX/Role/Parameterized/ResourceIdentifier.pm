@@ -34,6 +34,7 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::BUILDARGS;
 use Module::Runtime qw/use_module/;
 use Moo::Role;
 use MooX::Role::Logger;
+use Type::Params qw/compile/;
 use Types::Standard -all;
 use Try::Tiny;
 use Role::Tiny;
@@ -99,6 +100,26 @@ use MooX::Struct -rw,
               ];
 
 # ==================================================================================
+# Parameter validation
+# ==================================================================================
+our $check_params = compile(slurpy Dict[
+                                        whoami      => Str,
+                                        type        => Enum[qw/_common _generic/],
+                                        bnf_package => Str,
+                                        -extends    => Optional[ArrayRef[Str]]
+                                       ]
+                           );
+our $check_bnf_package = compile(slurpy Dict[
+                                             type        => Enum[qw/common generic/],
+                                             reserved    => RegexpRef,
+                                             unreserved  => RegexpRef,
+                                             pct_encoded => Str,
+                                             mapping     => HashRef[Str],
+                                             action_name => Str
+                                            ]
+                                );
+
+# ==================================================================================
 # Common
 # ==================================================================================
 our @normalizer_name = qw/case_normalizer
@@ -148,37 +169,27 @@ role {
   # -----------------------
   # Sanity checks on params
   # -----------------------
-  my %PARAMS = ();
-  map { $PARAMS{$_} = $params->{$_} } qw/whoami type bnf_package/;
-  #
-  # We will not insert methods in the role but in the calling package
-  #
-  croak 'whoami must exist and do Str' unless Str->check($PARAMS{whoami});
-  my $whoami = $PARAMS{whoami};
-  #
-  # And this depend on its type: _common or _generic
-  #
-  croak 'type must exist and do Enum[qw/_common _generic/]' unless defined($PARAMS{type}) && grep {$_ eq $PARAMS{type}} qw/_common _generic/;
-  my $type = $PARAMS{type};
+  my ($hash_ref) = HashRef->($params);
+  print STDERR Dumper($hash_ref);
+  my ($PARAMS) = $check_params->(%{$hash_ref});
+  print STDERR "OK: " . Dumper($PARAMS);
+
+  my $whoami      = $PARAMS->{whoami};
+  my $type        = $PARAMS->{type};
+  my $bnf_package = $PARAMS->{bnf_package};
+  my $extends     = $PARAMS->{-extends};
+
   my $is__common = $type eq '_common';
   my $is__generic = $type eq '_generic';
-  #
-  # There are only two things that differ between URI and IRI:
-  # - the grammar
-  # - the normalizers
-  # - the convertors
-  #
-  croak "[$type] bnf_package must exist and do Str" unless Str->check($PARAMS{bnf_package});
-  my $bnf_package = $PARAMS{bnf_package};
+
   use_module($bnf_package);
   #
   # Eventual extends should be done asap
   #
-  if (exists $params->{-extends}) {
-    croak "[$type] -extends must do ArrayRef" unless ArrayRef->check($params->{-extends});
+  if (defined $extends) {
     my $extends_sub;
     croak "[$type] $whoami must can extends (did you forgot to use Moo ?)" unless $extends_sub = $whoami->can('extends');
-    &$extends_sub(@{$params->{-extends}});
+    &$extends_sub(@{$extends});
   }
   #
   # ----------------------------
