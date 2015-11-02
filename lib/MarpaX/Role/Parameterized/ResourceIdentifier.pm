@@ -329,7 +329,7 @@ role {
       } catch {
         if ($setup->with_logger) {
           foreach (split(/\n/, "$_")) {
-            $self->_logger->warnff('%s: %s', $bnf_package, $_);
+            $self->_logger->warnf('%s: %s', $bnf_package, $_);
           }
         }
         $rc->[UNESCAPED] = $rc->[RAW];
