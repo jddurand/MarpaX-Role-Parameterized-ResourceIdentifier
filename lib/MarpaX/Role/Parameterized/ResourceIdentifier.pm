@@ -170,9 +170,7 @@ role {
   # Sanity checks on params
   # -----------------------
   my ($hash_ref) = HashRef->($params);
-  print STDERR Dumper($hash_ref);
   my ($PARAMS) = $check_params->(%{$hash_ref});
-  print STDERR "OK: " . Dumper($PARAMS);
 
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
