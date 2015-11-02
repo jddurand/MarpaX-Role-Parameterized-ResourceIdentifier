@@ -630,26 +630,32 @@ role {
 #
 # Instance methods common to any Resource Identifier
 #
-sub output {
-  my ($self, $what) = @_;
-
-  croak "Invalid undef argument" if (! defined($what));
-
-  if    ($what eq 'RAW'                        ) { return $self->_structs->[                        RAW]->output }
-  elsif ($what eq 'UNESCAPED'                  ) { return $self->_structs->[                  UNESCAPED]->output }
-  elsif ($what eq 'CASE_NORMALIZED'            ) { return $self->_structs->[            CASE_NORMALIZED]->output }
-  elsif ($what eq 'CHARACTER_NORMALIZED'       ) { return $self->_structs->[       CHARACTER_NORMALIZED]->output }
-  elsif ($what eq 'PERCENT_ENCODING_NORMALIZED') { return $self->_structs->[PERCENT_ENCODING_NORMALIZED]->output }
-  elsif ($what eq 'PATH_SEGMENT_NORMALIZED'    ) { return $self->_structs->[    PATH_SEGMENT_NORMALIZED]->output }
-  elsif ($what eq 'SCHEME_BASED_NORMALIZED'    ) { return $self->_structs->[    SCHEME_BASED_NORMALIZED]->output }
-  elsif ($what eq 'ESCAPED'                    ) { return $self->_structs->[                    ESCAPED]->output }
-  elsif ($what eq 'URI_CONVERTED'              ) { return $self->_structs->[              URI_CONVERTED]->output }
-  elsif ($what eq 'IRI_CONVERTED'              ) { return $self->_structs->[              IRI_CONVERTED]->output }
-  else                                           { croak "Invalid argument $what"     }
-}
+sub output            { $_[0]->_structs->[$_[1]]->output }
+sub struct            { $_[0]->_structs->[$_[1]]         }
 #
 # Class methods common to any Resource Identifier
 #
+sub indice_raw        { __PACKAGE__->indice('RAW') }
+sub indice_escaped    { __PACKAGE__->indice('ESCAPED') }
+sub indice_unescaped  { __PACKAGE__->indice('UNESCAPED') }
+sub indice_normalized { __PACKAGE__->indice('SCHEME_BASED_NORMALIZED') }
+sub indice {
+  my ($class, $what) = @_;
+
+  croak "Invalid undef argument" if (! defined($what));
+
+  if    ($what eq 'RAW'                        ) { return RAW }
+  elsif ($what eq 'UNESCAPED'                  ) { return UNESCAPED }
+  elsif ($what eq 'CASE_NORMALIZED'            ) { return CASE_NORMALIZED }
+  elsif ($what eq 'CHARACTER_NORMALIZED'       ) { return CHARACTER_NORMALIZED }
+  elsif ($what eq 'PERCENT_ENCODING_NORMALIZED') { return PERCENT_ENCODING_NORMALIZED }
+  elsif ($what eq 'PATH_SEGMENT_NORMALIZED'    ) { return PATH_SEGMENT_NORMALIZED }
+  elsif ($what eq 'SCHEME_BASED_NORMALIZED'    ) { return SCHEME_BASED_NORMALIZED }
+  elsif ($what eq 'ESCAPED'                    ) { return ESCAPED }
+  elsif ($what eq 'URI_CONVERTED'              ) { return URI_CONVERTED }
+  elsif ($what eq 'IRI_CONVERTED'              ) { return IRI_CONVERTED }
+  else                                           { croak "Invalid argument $what"     }
+}
 sub percent_encode {
   my ($class, $string, $regexp) = @_;
 

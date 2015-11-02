@@ -15,7 +15,9 @@ use Carp qw/croak/;
 use Log::Any qw/$log/;
 use Module::Runtime qw/use_module/;
 use Try::Tiny;
+use Type::Params qw/compile/;
 use Types::Standard -all;
+use Types::TypeTiny qw/StringLike/;
 use constant  { TRUE => !!1 };
 #
 # This is a not true role, though this package allow to inject what we want
@@ -27,8 +29,13 @@ use MooX::Role::Parameterized::With 'MarpaX::Role::Parameterized::ResourceIdenti
       second_argument => 'scheme',
      };
 
-our $setup    = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
-my $_CALLER = undef;
+our $check_new_abs = compile(
+                             StringLike,
+                             ConsumerOf['MarpaX::Role::Parameterized::ResourceIdentifier'],
+                             Maybe[Bool]
+                            );
+our $setup          = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->instance;
+my $_CALLER         = undef;
 
 sub import { $_CALLER = caller }
 
@@ -137,5 +144,37 @@ sub new {
 
   $self
 };
+
+sub new_abs {
+  my $class = shift;
+  my ($ref, $base, $normalize) = $check_new_abs->($_[0], $_[1], $_[2]);
+  #
+  # 5.2.1.  Pre-parse the Base URI
+  #
+  # ./.. Note that only the scheme component is required to be
+  # present in a base URI; the other components may be empty or
+  # undefined.
+  #
+  croak 'base uri must have at least a scheme' unless Str->check($base->_scheme) && length($base->_scheme);
+  #
+  # ./.. Normalization of the base URI, as described in Sections 6.2.2 and 6.2.3, is optional
+  #
+  my $struct = $base->struct($normalize ? $base->indice_normalized : $base->indice_raw);
+
+  # 5.2.2.  Transform References
+  #
+  # -- The URI reference is parsed into the five URI components
+  # --
+  #
+  $ref = $class->new($ref);
+
+  croak 'base uri must consume the generic syntax' unless (! grep { $struct->can($_) } qw/scheme authority path query fragment/);
+  my $scheme    = $struct->scheme;
+  my $authority = $struct->authority;
+  my $path      = $struct->path;
+  my $query     = $struct->query;
+  my $fragment  = $struct->fragment;
+
+}
 
 1;

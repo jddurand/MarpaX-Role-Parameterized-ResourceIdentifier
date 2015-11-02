@@ -87,7 +87,7 @@ role {
     my %rest = ();
     if (HashRef->check($first)) {
       if (exists($first->{input})) {
-        croak 'input must do Str' unless StringLike->check($first->{input});
+        croak 'input must do StringLike' unless StringLike->check($first->{input});
         my $thisinput = delete($first->{input});
         $input = "$thisinput";   # Eventual stringification
       } else {
