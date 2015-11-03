@@ -12,10 +12,6 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 use Moo::Role;
 use Types::Standard -all;
 #
-# The input trigger is in the BNF package
-#
-has input  => ( is => 'rw', isa => Str, trigger => 1 );
-#
 # common implementation has no normalizer
 #
 sub build_case_normalizer             { return {} }

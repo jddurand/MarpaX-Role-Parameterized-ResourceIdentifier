@@ -14,6 +14,7 @@ use Moo::Role;
 use MooX::Role::Logger;
 use MooX::HandlesVia;
 use MooX::Role::Parameterized;
+use Role::Tiny;
 use Type::Params qw/compile/;
 use Types::Standard -all;
 use Try::Tiny;
@@ -36,10 +37,8 @@ our $MAX   = _COUNT - 1;
 # The data that will be parsed
 # The result of the parsing, splitted into as many layers as supported
 #
-requires 'input';
-requires '_trigger_input';
-
-has _structs                  => ( is => 'rw', isa => ArrayRef[Object] );
+has input    => ( is => 'rw', isa => Str, trigger => 1 );
+has _structs => ( is => 'rw', isa => ArrayRef[Object] );
 
 # =============================================================================
 # Concatenation: Semantics fixed inside this role
@@ -91,8 +90,6 @@ our $check = compile(
                          ]
                     );
 
-my $action_count = 0;
-
 # =============================================================================
 # Parameterized role
 # =============================================================================
@@ -113,13 +110,16 @@ role {
   my $pct_encoded = $PARAMS->{pct_encoded} // '';
   my $mapping     = $PARAMS->{mapping};
 
-  my $action_base_name = sprintf('_action%d', ++$action_count);
-  my $action_full_name = sprintf('%s::%s', __PACKAGE__, $action_base_name);
+  #
+  # Make sure $whoami package is doing MooX::Role::Logger is not already
+  #
+  Role::Tiny->apply_roles_to_package($whoami, 'MooX::Role::Logger') unless $whoami->DOES('MooX::Role::Logger');
+  my $action_full_name = sprintf('%s::_action', $whoami);
   #
   # Push on-the-fly the action name
   # This will natively croak if the BNF would provide another hint for implementation
   #
-  $bnf .= "\n:default ::= action => $action_full_name\n";
+  $bnf = ":default ::= action => $action_full_name\n$bnf";
 
   my $reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
   my $is_common   = $type eq 'common';
@@ -171,11 +171,6 @@ role {
   my $args2array_sub = sub {
     my ($self, $lhs, $field, @args) = @_;
     my $rc = [ ('') x _COUNT ];
-    #
-    # Recuperate the adress once for all
-    #
-    state $whoami::normalizer_sub = $self->_normalizer_sub;
-    state $whoami::converter_sub = $self->_converter_sub;
     #
     # Concatenate
     #
@@ -258,7 +253,7 @@ role {
       #
       # For each normalized value, we apply the previous normalizers in order
       #
-      do { $rc->[$inormalizer] = $whoami::normalizer_sub->[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
+      do { $rc->[$inormalizer] = $self->_get_normalizer($_)->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
     }
     #
     # The converters. Every entry may have its own converter.
@@ -267,7 +262,7 @@ role {
       #
       # For each converted value, we apply the previous converters in order
       #
-      $rc->[$iconverter] = $whoami::converter_sub->[$iconverter]->($self, $field, $rc->[$iconverter], $lhs);
+      $rc->[$iconverter] = $self->_get_converter($iconverter)->($self, $field, $rc->[$iconverter], $lhs);
     }
     $rc
   };
@@ -289,32 +284,39 @@ role {
                      $r->read(\$input);
                      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
                      $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
-                     $r->value($self);
+                     my $value_ref = $r->value($self);
+                     croak "[$type] No parse tree value" unless ArrayRef->check($value_ref);
+                     foreach (0..$MAX) {
+                       $self->_structs->[$_]->output($value_ref->[$_]);
+                       $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description($_)]))
+                     }
                    }
                   );
   #
   # Inject the action
   #
-  method $action_base_name => sub {
-    my ($self, @args) = @_;
-    my $slg         = $Marpa::R2::Context::slg;
-    my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-    $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-    my $field = $mapping->{$lhs};
-    my $array_ref = $self->$args2array_sub($lhs, $field, @args);
-    my $structs = $self->_structs;
-    if (defined($field)) {
-      #
-      # Segments is special
-      #
-      if ($field eq 'segments') {
-        push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
-      } else {
-        $structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
-      }
-    }
-    $array_ref
-  };
+  install_modifier($whoami, 'fresh', '_action',
+                   sub {
+                     my ($self, @args) = @_;
+                     my $slg         = $Marpa::R2::Context::slg;
+                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+                     my $field = $mapping->{$lhs};
+                     my $array_ref = $self->$args2array_sub($lhs, $field, @args);
+                     my $structs = $self->_structs;
+                     if (defined($field)) {
+                       #
+                       # Segments is special
+                       #
+                       if ($field eq 'segments') {
+                         push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
+                       } else {
+                         $structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
+                       }
+                     }
+                     $array_ref
+                   }
+                  );
 };
 # =============================================================================
 # Instance methods
@@ -516,9 +518,13 @@ sub _generate_impl_attributes {
   my $type_sub = "_${type}_sub";
   my @type_names = @_;
   has $type_names  => (is => 'ro', isa => ArrayRef[Str], default => sub { \@type_names });
-  has $type_sub    => (is => 'ro', isa => ArrayRef[CodeRef], lazy => 1,
+  has $type_sub    => (is => 'ro', isa => ArrayRef[CodeRef|Undef], lazy => 1,
+                       handles_via => 'Array',
+                       handles => {
+                                   "_get_$type" => 'get'
+                                  },
                        builder => sub {
-                         $_[0]->_build_impl_sub($indice_start, $indice_end, $_[0]->$type_names)
+                         $_[0]->_build_impl_sub($indice_start, $indice_end, $type_names)
                        }
                       );
 }
@@ -527,10 +533,9 @@ sub _generate_impl_attributes {
 # =============================================================================
 sub _build_impl_sub {
   my ($self, $istart, $iend, $names) = @_;
-
   my @array = ( (undef) x _COUNT );
   foreach ($istart..$iend) {
-    my $name = $self->$names->[$_];
+    my $name = $self->$names->[$_ - $istart];
     my $exists = "exists_$name";
     my $getter = "get_$name";
     $array[$_] = sub {
@@ -543,6 +548,7 @@ sub _build_impl_sub {
       $_[0]->$exists($criteria) ? goto $_[0]->$getter($criteria) : $_[2]
     }
   }
+  \@array
 }
 
 1;
