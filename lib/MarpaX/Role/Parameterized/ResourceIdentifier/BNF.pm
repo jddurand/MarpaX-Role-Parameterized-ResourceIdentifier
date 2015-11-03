@@ -160,10 +160,8 @@ role {
   #
   my $trace;
   open(my $trace_file_handle, ">", \$trace) || croak "[$type] Cannot open trace filehandle, $!";
-  if ($marpa_trace) {
-    local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $whoami;
-    tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
-  }
+  local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $whoami;
+  tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
   # ---------------------------------------------------------------------
   # This stub will be the one doing the real work, called by Marpa action
   # ---------------------------------------------------------------------
@@ -271,10 +269,11 @@ role {
   #
   my $grammar = Marpa::R2::Scanless::G->new({source => \$bnf});
   my %recognizer_option = (
-                           trace_terminals =>  $marpa_trace_terminals,
-                           trace_values    =>  $marpa_trace_values,
-                           ranking_method  => 'high_rule_only',
-                           grammar         => $grammar
+                           trace_terminals   => $marpa_trace_terminals,
+                           trace_values      => $marpa_trace_values,,
+                           trace_file_handle => $trace_file_handle,
+                           ranking_method    => 'high_rule_only',
+                           grammar           => $grammar
                           );
   install_modifier($whoami, 'fresh', '_trigger_input',
                    sub {
