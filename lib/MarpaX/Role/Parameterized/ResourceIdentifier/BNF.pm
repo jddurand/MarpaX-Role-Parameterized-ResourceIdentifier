@@ -11,6 +11,7 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types qw/Common Generic/;
 use Moo::Role;
+use MooX::Role::Logger;
 use MooX::HandlesVia;
 use MooX::Role::Parameterized;
 use Type::Params qw/compile/;
@@ -31,12 +32,13 @@ use constant {
   _COUNT                      => 11
 };
 our $MAX   = _COUNT - 1;
-
 #
 # The data that will be parsed
 # The result of the parsing, splitted into as many layers as supported
 #
-has _input                    => ( is => 'rw', isa => Str );
+requires 'input';
+requires '_trigger_input';
+
 has _structs                  => ( is => 'rw', isa => ArrayRef[Object] );
 
 # =============================================================================
@@ -50,70 +52,28 @@ our $indice_concatenate_end      = PROTOCOL_BASED_NORMALIZED;
 # =============================================================================
 our $indice_normalizer_start     = CASE_NORMALIZED;
 our $indice_normalizer_end       = PROTOCOL_BASED_NORMALIZED;
-has case_normalizer              => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1,
-                                     handles_via => 'Hash',
-                                     handles => { get_case_normalizer => 'get' }
-                                    );
-has character_normalizer         => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-has percent_encoding_normalizer  => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-has path_segment_normalizer      => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-has scheme_based_normalizer      => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-has protocol_based_normalizer    => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-#
-# Implementations should work around these builders
-#
-sub build_case_normalizer             { return {} }
-sub build_character_normalizer        { return {} }
-sub build_percent_encoding_normalizer { return {} }
-sub build_path_segment_normalizer     { return {} }
-sub build_scheme_based_normalizer     { return {} }
-sub build_protocol_based_normalizer   { return {} }
-
-has _normalizer_names            => (is => 'ro', isa => ArrayRef[Str], default => sub {
-                                       [qw/
-                                            case_normalizer
-                                            character_normalizer
-                                            percent_encoding_normalizer
-                                            path_segment_normalizer
-                                            scheme_based_normalizer
-                                            protocol_based_normalizer
-                                          /
-                                       ]
-                                     }
-                                    );
-has _normalizer_sub              => (is => 'ro', isa => ArrayRef[CodeRef], lazy => 1, builder => 1);
-
-sub _build__normalizer_sub {
-  $_[0]->_build_impl_sub($indice_normalizer_start, $indice_normalizer_end, $_[0]->_normalizer_names)
-}
+__PACKAGE__->_generate_impl_attributes('normalizer',
+                                       $indice_normalizer_start,
+                                       $indice_normalizer_end,
+                                       qw/case_normalizer
+                                          character_normalizer
+                                          percent_encoding_normalizer
+                                          path_segment_normalizer
+                                          scheme_based_normalizer
+                                          protocol_based_normalizer/
+                                      );
 
 # =============================================================================
 # Converters : implementation dependant
 # =============================================================================
 our $indice_converter_start      = URI_CONVERTED;
 our $indice_converter_end        = IRI_CONVERTED;
-has uri_converter                => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-has iri_converter                => (is => 'ro', isa => HashRef[CodeRef], lazy => 1, builder => 1);
-#
-# Implementations should work around these builders
-#
-sub build_uri_converter             { return {} }
-sub build_iri_converter             { return {} }
-
-has _converter_names             => (is => 'ro', isa => ArrayRef[Str], default => sub {
-                                       [qw/
-                                            uri_converter
-                                            iri_converter
-                                          /
-                                       ]
-                                     }
-                                    );
-has _converter_sub               => (is => 'ro', isa => ArrayRef[CodeRef], lazy => 1, builder => 1);
-
-sub _build__converter_sub {
-  $_[0]->_build_impl_sub($indice_normalizer_start, $indice_normalizer_end, $_[0]->_normalizer_names)
-}
-
+__PACKAGE__->_generate_impl_attributes('converter',
+                                       $indice_converter_start,
+                                       $indice_converter_end,
+                                       qw/uri_converter
+                                          iri_converter/
+                                      );
 
 # =============================================================================
 # Parameter validation
@@ -127,11 +87,15 @@ our $check = compile(
                           reserved    => RegexpRef,
                           unreserved  => RegexpRef,
                           pct_encoded => Str|Undef,
-                          action_name => Str,
                           mapping     => HashRef[Str]
                          ]
                     );
 
+my $action_count = 0;
+
+# =============================================================================
+# Parameterized role
+# =============================================================================
 role {
   my $params = shift;
 
@@ -139,8 +103,7 @@ role {
   # Sanity checks on params
   # -----------------------
   my ($hash_ref)  = HashRef->($params);
-  # my ($PARAMS)    = $check->(%{$hash_ref});
-  my $PARAMS = $params;
+  my ($PARAMS)    = $check->(%{$hash_ref});
 
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
@@ -149,12 +112,14 @@ role {
   my $unreserved  = $PARAMS->{unreserved};
   my $pct_encoded = $PARAMS->{pct_encoded} // '';
   my $mapping     = $PARAMS->{mapping};
-  my $action_name = $PARAMS->{action_name};
 
+  my $action_base_name = sprintf('_action%d', ++$action_count);
+  my $action_full_name = sprintf('%s::%s', __PACKAGE__, $action_base_name);
   #
-  # Replace on-the-fly the action name
+  # Push on-the-fly the action name
+  # This will natively croak if the BNF would provide another hint for implementation
   #
-  $bnf =~ s/\$action/$action_name/;
+  $bnf .= "\n:default ::= action => $action_full_name\n";
 
   my $reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
   my $is_common   = $type eq 'common';
@@ -184,7 +149,6 @@ role {
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;
   my $marpa_trace_values    = $setup->marpa_trace_values;
   my $marpa_trace           = $setup->marpa_trace;
-  my $with_logger           = $setup->with_logger;
   my $uri_compat            = $setup->uri_compat;
 
   #
@@ -230,11 +194,7 @@ role {
         }
         $rc->[UNESCAPED] = MarpaX::RFC::RFC3629->new($octets)->output
       } catch {
-        if ($setup->with_logger) {
-          foreach (split(/\n/, "$_")) {
-            $self->_logger->warnf('%s: %s', $whoami, $_);
-          }
-        }
+        $self->_logger->warnf('%s: %s', $whoami, $_) for split(/\n/, "$_");
         $rc->[UNESCAPED] = $rc->[RAW];
         $unescape_ok = 0;
         return
@@ -283,11 +243,7 @@ role {
                   join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)))
                 }
               } catch {
-                if ($setup->with_logger) {
-                  foreach (split(/\n/, "$_")) {
-                    $self->_logger->warnf('%s: %s', $whoami, $_);
-                  }
-                }
+                $self->_logger->warnf('%s: %s', $whoami, $_) for split(/\n/, "$_");
                 $rc->[ESCAPED] .= $character
               }
             }
@@ -316,7 +272,7 @@ role {
     $rc
   };
   #
-  # Input trigger
+  # Parse method installed directly in the BNF package
   #
   my $grammar = Marpa::R2::Scanless::G->new({source => \$bnf});
   my %recognizer_option = (
@@ -325,57 +281,200 @@ role {
                            ranking_method  => 'high_rule_only',
                            grammar         => $grammar
                           );
-  my $trigger_input = sub {
-    my ($self, $input) = @_;
+  install_modifier($whoami, 'fresh', '_trigger_input',
+                   sub {
+                     my ($self, $input) = @_;
 
-    my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-    $r->read(\$input);
-    croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-    $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
-    $r->value($self);
-    if ($with_logger) {
-      foreach (0..$MAX) {
-        my $d = Data::Dumper->new([$self->_structs->[$_]->output], [$self->_indice_description($_)]);
-        $self->_logger->debugf('%s: %s', $whoami, $d->Dump);
-      }
-    }
-  };
-  #
-  # This is injected in the package, not in the role
-  #
-  install_modifier($whoami, 'fresh', bnf => sub { $bnf });
-  install_modifier($whoami, 'fresh', grammar => sub { $grammar });
-  install_modifier($whoami, 'fresh', $action_name => sub
-                   {
-                     my ($self, @args) = @_;
-                     my $slg         = $Marpa::R2::Context::slg;
-                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
-                     my $field = $mapping->{$lhs};
-                     my $array_ref = &$args2array_sub($self, $lhs, $field, @args);
-                     if ($with_logger) {
-                       $self->_logger->tracef('%s: %s ::= %s', $whoami, $lhs, "@rhs");
-                       $self->_logger->tracef('%s:   IN  %s', $whoami, \@args);
-                       $self->_logger->tracef('%s:   OUT %s', $whoami, $array_ref);
-                     }
-                     my $structs = $self->_structs;
-                     if (defined($field)) {
-                       #
-                       # Segments is special
-                       #
-                       if ($field eq 'segments') {
-                         push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
-                       } else {
-                         $structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
-                       }
-                     }
-                     $array_ref
+                     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+                     $r->read(\$input);
+                     croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
+                     $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
+                     $r->value($self);
                    }
                   );
+  #
+  # Inject the action
+  #
+  method $action_base_name => sub {
+    my ($self, @args) = @_;
+    my $slg         = $Marpa::R2::Context::slg;
+    my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+    $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+    my $field = $mapping->{$lhs};
+    my $array_ref = $self->$args2array_sub($lhs, $field, @args);
+    my $structs = $self->_structs;
+    if (defined($field)) {
+      #
+      # Segments is special
+      #
+      if ($field eq 'segments') {
+        push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
+      } else {
+        $structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
+      }
+    }
+    $array_ref
+  };
 };
+# =============================================================================
+# Instance methods
+# =============================================================================
+sub struct_by_type           { $_[0]->_structs->[$_[0]->indice($_[1])] }
+sub output_by_type           { $_[0]->struct_by_type($_[1])->output }
+sub struct_by_indice         { $_[0]->_structs->[$_[1]] }
+sub output_by_indice         { $_[0]->struct_by_indice($_[1])->output }
+# =============================================================================
+# Class methods
+# =============================================================================
+sub indice_raw                         {                            RAW }
+sub indice_unescaped                   {                      UNESCAPED }
+sub indice_case_normalized             {                CASE_NORMALIZED }
+sub indice_character_normalized        {           CHARACTER_NORMALIZED }
+sub indice_percent_encoding_normalized {    PERCENT_ENCODING_NORMALIZED }
+sub indice_path_segment_normalized     {        PATH_SEGMENT_NORMALIZED }
+sub indice_scheme_based_normalized     {        SCHEME_BASED_NORMALIZED }
+sub indice_protocol_based_normalized   {      PROTOCOL_BASED_NORMALIZED }
+sub indice_escaped                     {                        ESCAPED }
+sub indice_uri_converted               {                  URI_CONVERTED }
+sub indice_iri_converted               {                  IRI_CONVERTED }
+sub indice_default                     {               indice_escaped() }
+sub indice_normalized                  {         $indice_normalizer_end }
+sub indice {
+  my ($class, $what) = @_;
 
+  croak "Invalid undef argument" if (! defined($what));
+
+  if    ($what eq 'RAW'                        ) { return                         RAW }
+  elsif ($what eq 'UNESCAPED'                  ) { return                   UNESCAPED }
+  elsif ($what eq 'CASE_NORMALIZED'            ) { return             CASE_NORMALIZED }
+  elsif ($what eq 'CHARACTER_NORMALIZED'       ) { return        CHARACTER_NORMALIZED }
+  elsif ($what eq 'PERCENT_ENCODING_NORMALIZED') { return PERCENT_ENCODING_NORMALIZED }
+  elsif ($what eq 'PATH_SEGMENT_NORMALIZED'    ) { return     PATH_SEGMENT_NORMALIZED }
+  elsif ($what eq 'SCHEME_BASED_NORMALIZED'    ) { return     SCHEME_BASED_NORMALIZED }
+  elsif ($what eq 'PROTOCOL_BASED_NORMALIZED'  ) { return   PROTOCOL_BASED_NORMALIZED }
+  elsif ($what eq 'ESCAPED'                    ) { return                     ESCAPED }
+  elsif ($what eq 'URI_CONVERTED'              ) { return               URI_CONVERTED }
+  elsif ($what eq 'IRI_CONVERTED'              ) { return               IRI_CONVERTED }
+  else                                           { croak "Invalid argument $what"     }
+}
+
+sub percent_encode {
+  my ($class, $string, $regexp) = @_;
+
+  my $encoded = $string;
+  $encoded =~ s!$regexp!
+    {
+     #
+     # ${^MATCH} is a read-only variable
+     # and Encode::encode is affecting $match -;
+     #
+     my $match = ${^MATCH};
+     join('',
+          map {
+            '%' . uc(unpack('H2', $_))
+          } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
+         )
+    }
+    !egp;
+  $encoded
+}
+
+sub remove_dot_segments {
+  my ($class, $input) = @_;
+
+  #
+  # 1.  The input buffer is initialized with the now-appended path
+  # components and the output buffer is initialized to the empty
+  # string.
+  #
+  my $output = '';
+
+  # my $i = 0;
+  # my $step = ++$i;
+  # my $substep = '';
+  # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER";
+  # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+  # $step = ++$i;
+  #
+  # 2.  While the input buffer is not empty, loop as follows:
+  #
+  while (length($input)) {
+    #
+    # A. If the input buffer begins with a prefix of "../" or "./",
+    #    then remove that prefix from the input buffer; otherwise,
+    #
+    if (index($input, '../') == 0) {
+      substr($input, 0, 3, '');
+      # $substep = 'A';
+    }
+    elsif (index($input, './') == 0) {
+      substr($input, 0, 2, '');
+      # $substep = 'A';
+    }
+    #
+    # B. if the input buffer begins with a prefix of "/./" or "/.",
+    #    where "." is a complete path segment, then replace that
+    #    prefix with "/" in the input buffer; otherwise,
+    #
+    elsif (index($input, '/./') == 0) {
+      substr($input, 0, 3, '/');
+      # $substep = 'B';
+    }
+    elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # Take care this can confuse the other test on '/../ or '/..'
+      substr($input, 0, 2, '/');
+      # $substep = 'B';
+    }
+    #
+    # C. if the input buffer begins with a prefix of "/../" or "/..",
+    #    where ".." is a complete path segment, then replace that
+    #    prefix with "/" in the input buffer and remove the last
+    #    segment and its preceding "/" (if any) from the output
+    #    buffer; otherwise,
+    #
+    elsif (index($input, '/../') == 0) {
+      substr($input, 0, 4, '/');
+      $output =~ s/\/?[^\/]*\z//;
+      # $substep = 'C';
+    }
+    elsif ($input =~ /^\/\.\.(?:[^\/]|\z)/) {
+      substr($input, 0, 3, '/');
+      $output =~ s/\/?[^\/]*\z//;
+      # $substep = 'C';
+    }
+    #
+    # D. if the input buffer consists only of "." or "..", then remove
+    #    that from the input buffer; otherwise,
+    #
+    elsif (($input eq '.') || ($input eq '..')) {
+      $input = '';
+      # $substep = 'D';
+    }
+    #
+    # E. move the first path segment in the input buffer to the end of
+    #    the output buffer, including the initial "/" character (if
+    #    any) and any subsequent characters up to, but not including,
+    #    the next "/" character or the end of the input buffer.
+    #
+    #    Note: "or the end of the input buffer" ?
+    #
+    else {
+      $input =~ /^\/?([^\/]*)/;                            # This will always match
+      $output .= substr($input, $-[0], $+[0] - $-[0], ''); # Note that perl has no problem saying length is zero
+      # $substep = 'E';
+    }
+    # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+  }
+  #
+  # 3. Finally, the output buffer is returned as the result of
+  #    remove_dot_segments.
+  #
+  return $output;
+}
+# =============================================================================
+# Internal class methods
+# =============================================================================
 sub _indice_description {
-  # my ($self, $indice) = @_;
+  # my ($class, $indice) = @_;
   return 'Invalid indice' if ! defined($_[1]);
   if    ($_[1] == RAW                        ) { return 'Raw value                        ' }
   elsif ($_[1] == UNESCAPED                  ) { return 'Unescaped value                  ' }
@@ -389,13 +488,50 @@ sub _indice_description {
   elsif ($_[1] == IRI_CONVERTED              ) { return 'IRI converted value              ' }
   else                                         { return 'Unknown indice                   ' }
 }
-
+sub _generate_impl_attributes {
+  my $class = shift;
+  my $type = shift;
+  my ($indice_start, $indice_end) = (shift, shift);
+  foreach (@_) {
+    my $builder = "build_$_";
+    has $_ => (is => 'ro', isa => HashRef[CodeRef], lazy => 1,
+               builder => $builder,
+               handles_via => 'Hash',
+               handles => {
+                           "get_$_"    => 'get',
+                           "set_$_"    => 'set',
+                           "exists_$_" => 'exists',
+                           "delete_$_" => 'delete',
+                           "kv_$_"     => 'kv',
+                           "keys_$_"   => 'keys',
+                           "values_$_" => 'values',
+                          }
+              );
+    #
+    # Implementations should provide the builders
+    #
+    requires $builder;
+  }
+  my $type_names = "_${type}_names";
+  my $type_sub = "_${type}_sub";
+  my @type_names = @_;
+  has $type_names  => (is => 'ro', isa => ArrayRef[Str], default => sub { \@type_names });
+  has $type_sub    => (is => 'ro', isa => ArrayRef[CodeRef], lazy => 1,
+                       builder => sub {
+                         $_[0]->_build_impl_sub($indice_start, $indice_end, $_[0]->$type_names)
+                       }
+                      );
+}
+# =============================================================================
+# Internal instance methods
+# =============================================================================
 sub _build_impl_sub {
   my ($self, $istart, $iend, $names) = @_;
 
   my @array = ( (undef) x _COUNT );
   foreach ($istart..$iend) {
     my $name = $self->$names->[$_];
+    my $exists = "exists_$name";
     my $getter = "get_$name";
     $array[$_] = sub {
       # my ($self, $field, $value, $lhs) = @_;
@@ -404,8 +540,7 @@ sub _build_impl_sub {
       # At run-time, in particular Protocol-based normalizers,
       # the callbacks can be altered
       #
-      my $impl = $_[0]->$getter($criteria);
-      defined($impl) ? goto &$impl : $_[2]
+      $_[0]->$exists($criteria) ? goto $_[0]->$getter($criteria) : $_[2]
     }
   }
 }
