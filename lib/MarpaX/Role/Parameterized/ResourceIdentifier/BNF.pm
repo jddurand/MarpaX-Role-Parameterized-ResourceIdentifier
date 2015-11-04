@@ -45,7 +45,23 @@ has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub
 has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } );
 has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } );
 has is_character_normalized => ( is => 'ro',  isa => Bool,        default => sub {   !!1 } );
-has _structs        => ( is => 'rw', isa => ArrayRef[Object] );
+has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
+has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => sub {
+                                   [
+                                    'Raw value                        ',
+                                    'Unescaped value                  ',
+                                    'Case normalized value            ',
+                                    'Character normalized value       ',
+                                    'Percent encoding mormalized value',
+                                    'Path segment normalized value    ',
+                                    'Scheme based normalized value    ',
+                                    'Escaped value                    ',
+                                    'URI converted value              ',
+                                    'IRI converted value              ',
+                                    'Escaped value                    '
+                                   ]
+                                 }
+                               );
 
 # =============================================================================
 # Concatenation: Semantics fixed inside this role
@@ -313,7 +329,7 @@ role {
                      #
                      foreach (0..$MAX) {
                        $self->_structs->[$_]->output($value->[$_]);
-                       $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description($_)])->Dump)
+                       $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description->[$_]])->Dump)
                      }
                    }
                   );
@@ -506,21 +522,6 @@ sub remove_dot_segments {
 # =============================================================================
 # Internal class methods
 # =============================================================================
-sub _indice_description {
-  # my ($class, $indice) = @_;
-  return 'Invalid indice' if ! defined($_[1]);
-  if    ($_[1] == RAW                        ) { return 'Raw value                        ' }
-  elsif ($_[1] == UNESCAPED                  ) { return 'Unescaped value                  ' }
-  elsif ($_[1] == CASE_NORMALIZED            ) { return 'Case normalized value            ' }
-  elsif ($_[1] == CHARACTER_NORMALIZED       ) { return 'Character normalized value       ' }
-  elsif ($_[1] == PERCENT_ENCODING_NORMALIZED) { return 'Percent encoding mormalized value' }
-  elsif ($_[1] == PATH_SEGMENT_NORMALIZED    ) { return 'Path segment normalized value    ' }
-  elsif ($_[1] == SCHEME_BASED_NORMALIZED    ) { return 'Scheme based normalized value    ' }
-  elsif ($_[1] == ESCAPED                    ) { return 'Escaped value                    ' }
-  elsif ($_[1] == URI_CONVERTED              ) { return 'URI converted value              ' }
-  elsif ($_[1] == IRI_CONVERTED              ) { return 'IRI converted value              ' }
-  else                                         { return 'Unknown indice                   ' }
-}
 sub _generate_impl_attributes {
   my $class = shift;
   my $type = shift;
