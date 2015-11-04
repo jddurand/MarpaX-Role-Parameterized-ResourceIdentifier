@@ -10,6 +10,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 # AUTHORITY
 
 use Moo::Role;
+use Types::Standard -all;
 #
 # Common implementation has no normalizer except for scheme
 #
@@ -29,7 +30,7 @@ sub build_case_normalizer {
   # triplet (e.g., "%3a" versus "%3A") are case-insensitive and therefore
   # should be normalized to use uppercase letters for the digits A - F.
   #
-  if (defined($self->pct_encoded)) {
+  if (! Undef->check($self->pct_encoded)) {
     return { $self->pct_encoded => sub { uc $_[2] } }
   } else {
     return {}
