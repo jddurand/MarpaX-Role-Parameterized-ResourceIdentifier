@@ -5,6 +5,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Data::Dumper;
+use Encode qw/encode/;
 use Marpa::R2;
 use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
@@ -16,6 +17,7 @@ use MooX::HandlesVia;
 use MooX::Role::Parameterized;
 use Role::Tiny;
 use Type::Params qw/compile/;
+use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
 use Try::Tiny;
 use constant {
@@ -34,11 +36,14 @@ use constant {
 };
 our $MAX   = _COUNT - 1;
 #
-# The data that will be parsed
-# The result of the parsing, splitted into as many layers as supported
+# Explicit slots for all supported attributes in input
 #
-has input    => ( is => 'rw', isa => Str, trigger => 1 );
-has _structs => ( is => 'rw', isa => ArrayRef[Object] );
+has input                   => ( is => 'rwp', isa => Str,         trigger => 1 );
+has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } );
+has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } );
+has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } );
+has is_character_normalized => ( is => 'ro',  isa => Bool,        default => sub {   !!1 } );
+has _structs        => ( is => 'rw', isa => ArrayRef[Object] );
 
 # =============================================================================
 # Concatenation: Semantics fixed inside this role
@@ -284,10 +289,12 @@ role {
                      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
                      $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
                      my $value_ref = $r->value($self);
-                     croak "[$type] No parse tree value" unless ArrayRef->check($value_ref);
+                     croak "[$type] No parse tree value" unless Ref->check($value_ref);
+                     my $value = ${$value_ref};
+                     croak "[$type] Invalid parse tree value" unless ArrayRef->check($value);
                      foreach (0..$MAX) {
-                       $self->_structs->[$_]->output($value_ref->[$_]);
-                       $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description($_)]))
+                       $self->_structs->[$_]->output($value->[$_]);
+                       $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description($_)])->Dump)
                      }
                    }
                   );
@@ -316,6 +323,12 @@ role {
                      $array_ref
                    }
                   );
+  #
+  # Create methods to remember pct_encoded, reserved and unreserved
+  #
+  install_modifier($whoami, 'fresh', 'pct_encoded' => sub { $pct_encoded });
+  install_modifier($whoami, 'fresh', 'reserved'    => sub { $reserved });
+  install_modifier($whoami, 'fresh', 'unreserved'  => sub { $unreserved });
 };
 # =============================================================================
 # Instance methods
@@ -532,19 +545,24 @@ sub _generate_impl_attributes {
 # =============================================================================
 sub _build_impl_sub {
   my ($self, $istart, $iend, $names) = @_;
-  my @array = ( (undef) x _COUNT );
-  foreach ($istart..$iend) {
-    my $name = $self->$names->[$_ - $istart];
-    my $exists = "exists_$name";
-    my $getter = "get_$name";
-    $array[$_] = sub {
-      # my ($self, $field, $value, $lhs) = @_;
-      my $criteria = $_[1] || $_[3] || '';
-      #
-      # At run-time, in particular Protocol-based normalizers,
-      # the callbacks can be altered
-      #
-      $_[0]->$exists($criteria) ? goto $_[0]->$getter($criteria) : $_[2]
+  my @array = ();
+  foreach (0..$MAX) {
+    if (($_ < $istart) || ($_ > $iend)) {
+      push(@array, undef);
+    } else {
+      my $name = $self->$names->[$_ - $istart];
+      my $exists = "exists_$name";
+      my $getter = "get_$name";
+      push(@array, sub {
+             # my ($self, $field, $value, $lhs) = @_;
+             my $criteria = $_[1] || $_[3] || '';
+             #
+             # At run-time, in particular Protocol-based normalizers,
+             # the callbacks can be altered
+             #
+             $_[0]->$exists($criteria) ? goto $_[0]->$getter($criteria) : $_[2]
+           }
+          )
     }
   }
   \@array

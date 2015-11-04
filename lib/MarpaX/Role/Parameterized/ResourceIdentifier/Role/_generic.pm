@@ -11,10 +11,11 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic;
 
 use Moo::Role;
 use MooX::Role::Logger;
+use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
 
 # --------------------------------------------
-# http://tools.ietf.org/html/rfc3987#section-3
+# http://tools.ietf.org/html/rfc3987
 # --------------------------------------------
 #
 # 3.1.  Mapping of IRIs to URIs
@@ -55,6 +56,22 @@ around build_iri_converter => sub {
       goto &_domain_to_ascii
     }
   }
+  $rc
+};
+#
+# 5.3.2.1.  Case Normalization
+#
+# When an IRI uses components of the generic syntax, the component
+# syntax equivalence rules always apply; namely, that the scheme and
+# US-ASCII only host are case insensitive and therefore should be
+# normalized to lowercase.
+#
+around build_case_normalizer => sub {
+  my ($orig, $self) = (shift, shift);
+
+  my $rc = $self->$orig(@_);
+  $rc->{scheme} = sub { lc $_[2] };
+  $rc->{host}   = sub { lc($_[2]) if Bytes->check($_[2]) };
   $rc
 };
 

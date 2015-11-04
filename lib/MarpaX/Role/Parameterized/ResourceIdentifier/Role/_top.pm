@@ -14,7 +14,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top;
 # what new returns
 #
 use Carp qw/croak/;
-use Encode qw/decode/;
+use Encode 2.21 qw/find_encoding decode/; # 2.21 for mime_name support
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types -all;
 use Module::Runtime qw/use_module/;
@@ -25,8 +25,9 @@ use Types::TypeTiny qw/StringLike/;
 use Types::Encodings qw/Bytes/;
 use constant  { TRUE => !!1 };
 
-our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
-our $check = compile(StringLike|HashRef, Maybe[Str]);
+our $setup         = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
+our $check         = compile(StringLike|HashRef, Maybe[Str]);
+our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
 
 my $_CALLER = undef;
 
@@ -66,6 +67,13 @@ sub BUILDARGS {
       my $octets          = $first->{octets};
       my $encoding        = $first->{encoding};
       #
+      # Force is_character_normalized if we are converting from a non-UCS-based
+      # character encoding
+      #
+      my $enc_mime_name = find_encoding($encoding)->mime_name;
+      my $is_character_normalized = grep { $enc_mime_name eq $_ } @ucs_mime_name;
+      $first->{is_character_normalized} = $is_character_normalized if ! $is_character_normalized;
+      #
       # Encode::encode will croak by itself if decode_strategy is not ok
       #
       my $decode_strategy = $first->{decode_strategy} // Encode::FB_CROAK;
@@ -87,7 +95,7 @@ sub BUILDARGS {
   }
   my $args = { input => $input, %rest };
   if (! $MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top::inherited_from_child) {
-    $args->{scheme} = $scheme if ! Undef->check($scheme);
+    $args->{scheme} = lc($scheme) if ! Undef->check($scheme);
   }
 
   $args
@@ -142,16 +150,16 @@ sub new {
   #
   my $self;
   if ($input =~ /^[A-Za-z][A-Za-z0-9+.-]*(?=:)/p) {
-    $self = $class->_new_from_specific(${^MATCH}, $input);
+    $self = $class->_new_from_specific(${^MATCH}, $args);
   }
   #
   # else _generic: may fail but try/catch'ed
   #
-  $self = $class->_new_from_generic($input) if (! $self);
+  $self = $class->_new_from_generic($args) if (! $self);
   #
   # fallback _common : must succeed
   #
-  $self = $class->_new_from_common($input) if (! $self);
+  $self = $class->_new_from_common($args) if (! $self);
   #
   # scheme argument
   #
@@ -173,7 +181,7 @@ sub new {
       } else {
         croak 'Impossible case';
       }
-      $self = $class->_new_from_specific($real_scheme, $input) // $self;
+      $self = $class->_new_from_specific($real_scheme, $args) // $self;
     }
   }
 
