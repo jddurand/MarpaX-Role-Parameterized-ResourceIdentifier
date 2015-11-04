@@ -11,7 +11,6 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic;
 
 use Moo::Role;
 use MooX::Role::Logger;
-use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
 
 # --------------------------------------------
@@ -71,7 +70,7 @@ around build_case_normalizer => sub {
 
   my $rc = $self->$orig(@_);
   $rc->{scheme} = sub { lc $_[2] };
-  $rc->{host}   = sub { lc($_[2]) if Bytes->check($_[2]) };
+  $rc->{host}   = sub { $_[2] =~ tr/\0-\x7f//c ? $_[2] : lc($_[2]) };
   $rc
 };
 
@@ -93,7 +92,7 @@ around build_scheme_based_normalizer => sub {
   $rc->{path} = sub { length($_[2]) ? $_[2] : '/' };
   if (! Undef->check($self->default_port)) {
     my $default_port= quotemeta($self->default_port);
-    $rc->{authority} = sub { print STDERR "Authority is $_[2] ==> " . ($_[2] =~ /^.*(?=:$default_port?)$/p ? ${^MATCH} : $_[2]) . "\n"; $_[2] =~ /^.*(?=:$default_port?)$/p ? ${^MATCH} : $_[2] }
+    $rc->{authority} = sub { $_[2] =~ /:$default_port?\z/ ? substr($_[2], 0, $-[0]) : $_[2] }
   }
   $rc
 };

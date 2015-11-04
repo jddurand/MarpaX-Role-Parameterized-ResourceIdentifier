@@ -55,7 +55,7 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                     'IRI converted value              ',
                                     'Case normalized value            ',
                                     'Character normalized value       ',
-                                    'Percent encoding mormalized value',
+                                    'Percent encoding normalized value',
                                     'Path segment normalized value    ',
                                     'Scheme based normalized value    ',
                                     'Protocol based normalized value  ',
@@ -270,10 +270,11 @@ role {
     }
     #
     # The normalization ladder
-    # Each normalization is applied on the previous one
+    # For every normalized value, run also previous normalizers
     #
-    my $previous = $rc->[$indice_normalizer_start];
-    do { $rc->[$_] = $previous = $self->_get_normalizer($_)->($self, $field, $previous, $lhs) } for ($indice_normalizer_start..$indice_normalizer_end);
+    for my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
+      do { $rc->[$inormalizer] = $self->_get_normalizer($_)->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
+    }
     #
     # The converters. Every entry is independant.
     #
@@ -304,14 +305,17 @@ role {
                      # empty string, i.e. a situation that can never happen during
                      # parsing
                      #
+                     $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['input                            '])->Dump);
+                     #
                      # The normalization ladder
-                     # Each normalization is applied on the previous one
                      #
                      do { $input = $self->_get_normalizer($_)->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
+                     $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Normalized input                 '])->Dump);
                      #
                      # The converters. Every entry is independant.
                      #
                      do { $input = $self->_get_converter($_)->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
+                     $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Converted input                  '])->Dump);
                      #
                      # Parse (may croak)
                      #
@@ -343,8 +347,11 @@ role {
                      my $slg         = $Marpa::R2::Context::slg;
                      my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
                      $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+                     # $self->_logger->tracef('%s: %s ::= %s', $whoami, $lhs, join(' ', @rhs));
                      my $field = $mapping->{$lhs};
+                     # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
                      my $array_ref = $self->$args2array_sub($lhs, $field, @args);
+                     # $self->_logger->tracef('%s:   %s[OUT] %s', $whoami, $field || $lhs || '', $array_ref);
                      my $structs = $self->_structs;
                      if (defined($field)) {
                        #
