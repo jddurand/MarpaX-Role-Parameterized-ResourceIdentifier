@@ -9,19 +9,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 
 # AUTHORITY
 
-use MarpaX::RFC::RFC3987::_top;
 use Moo::Role;
-use Types::Standard -all;
-
-#
-# All the hardwork is already done by the very top-level package, which is not
-# a Moo package. I do not use FOREIGNARGS because it is not a parent.
-#
-sub BUILDARGS {
-  my $class = shift;
-  MarpaX::RFC::RFC3987::_top->BUILDARGS(@_)
-}
-
 #
 # Common implementation has no normalizer except for scheme
 #
@@ -54,5 +42,7 @@ sub build_scheme_based_normalizer     { return {} }
 sub build_protocol_based_normalizer   { return {} }
 sub build_uri_converter               { return {} }
 sub build_iri_converter               { return {} }
+
+with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BUILDARGS';
 
 1;

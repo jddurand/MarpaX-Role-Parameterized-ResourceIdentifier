@@ -36,9 +36,11 @@ use constant {
 };
 our $MAX   = _COUNT - 1;
 #
-# Explicit slots for all supported attributes in input
+# Explicit slots for all supported attributes in input, scheme
+# is explicitely ignored, it is handled only by _top
 #
 has input                   => ( is => 'rwp', isa => Str,         trigger => 1 );
+has has_recognized_scheme   => ( is => 'rwp', isa => Bool,        default => sub {   !!0 } ); # Setted eventually by _top
 has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } );
 has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } );
 has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } );
