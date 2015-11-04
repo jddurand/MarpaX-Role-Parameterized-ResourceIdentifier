@@ -255,18 +255,13 @@ role {
     # The normalization ladder
     # Each normalization is applied on the previous one
     #
-    foreach my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
-      do { $rc->[$inormalizer] = $self->_get_normalizer($_)->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
-    }
+    my $previous = $rc->[$indice_normalizer_start];
+    do { $rc->[$_] = $previous = $self->_get_normalizer($_)->($self, $field, $previous, $lhs) } for ($indice_normalizer_start..$indice_normalizer_end);
     #
-    # The converters. Every entry may have its own converter.
+    # The converters. Every entry is independant.
     #
-    foreach my $iconverter ($indice_converter_start..$indice_converter_end) {
-      #
-      # For each converted value, we apply the previous converters in order
-      #
-      $rc->[$iconverter] = $self->_get_converter($iconverter)->($self, $field, $rc->[$iconverter], $lhs);
-    }
+    do { $rc->[$_] = $self->_get_converter($_)->($self, $field, $rc->[$_], $lhs) } for ($indice_converter_start..$indice_converter_end);
+
     $rc
   };
   #
@@ -293,22 +288,13 @@ role {
                      # parsing
                      #
                      # The normalization ladder
+                     # Each normalization is applied on the previous one
                      #
-                     foreach my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
-                       #
-                       # For each normalized value, we apply the previous normalizers in order
-                       #
-                       do { $input = $self->_get_normalizer($_)->($self, '', $input, '') } for ($indice_normalizer_start..$inormalizer);
-                     }
+                     do { $input = $self->_get_normalizer($_)->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
                      #
-                     # The converters. Every entry may have its own converter.
+                     # The converters. Every entry is independant.
                      #
-                     foreach my $iconverter ($indice_converter_start..$indice_converter_end) {
-                       #
-                       # For each converted value, we apply the previous converters in order
-                       #
-                       $input = $self->_get_converter($iconverter)->($self, '', $input, '');
-                     }
+                     do { $input = $self->_get_converter($_)->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
                      #
                      # Parse (may croak)
                      #

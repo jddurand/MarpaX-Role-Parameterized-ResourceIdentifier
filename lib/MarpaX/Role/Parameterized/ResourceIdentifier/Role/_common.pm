@@ -53,11 +53,7 @@ sub build_character_normalizer        {
   # interoperability.
   #
   if (! $self->is_character_normalized) {
-    return { '' => sub { use Data::Dumper;
-                         print STDERR "BEFORE: " . Dumper($_[2]);
-                         my $after = normalize('C',  $_[2]);
-                         print STDERR "AFTER: " . Dumper($after);
-                         normalize('C',  $_[2]) } }
+    return { '' => sub { normalize('C',  $_[2]) } }
   } else {
     return {}
   }
