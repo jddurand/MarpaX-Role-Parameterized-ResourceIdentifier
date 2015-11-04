@@ -96,29 +96,28 @@ around build_percent_encoding_normalizer => sub {
       #
       if ($unescaped_ok) {
         my $new_value = '';
-        my $position_in_original_rc = 0;
+        my $position_in_original_value = 0;
         my $unreserved = $self->unreserved;
+        my $reescaped_ok = 1;
         foreach (split('', $unescaped)) {
-          my $length_of_encoded_in_original_rc;
+          my $reencoded_length;
           try {
             my $character = $_;
-            my $re_encoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
-            $length_of_encoded_in_original_rc = length($re_encoded);
+            my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
+            $reencoded_length = length($reencoded);
           } catch {
             $self->_logger->warnf('%s', $_) for split(/\n/, "$_");
+            $reescaped_ok = 0;
           };
-          if (! defined($length_of_encoded_in_original_rc)) {
-            $unescaped_ok = 0;
-            last;
-          }
+          last if (! $reescaped_ok);
           if ($_ =~ $unreserved) {
             $new_value .= $_;
           } else {
-            $new_value = substr($value, $position_in_original_rc, $length_of_encoded_in_original_rc);
+            $new_value = substr($value, $position_in_original_value, $reencoded_length);
           }
-          $position_in_original_rc += $length_of_encoded_in_original_rc;
+          $position_in_original_value += $reencoded_length;
         }
-        $value = $new_value if ($unescaped_ok);
+        $value = $new_value if ($reescaped_ok);
       }
       $value
     };
