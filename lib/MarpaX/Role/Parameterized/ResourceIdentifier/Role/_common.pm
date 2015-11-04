@@ -10,6 +10,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 # AUTHORITY
 
 use Moo::Role;
+use Unicode::Normalize qw/normalize/;
 use Types::Standard -all;
 #
 # Common implementation has no normalizer except for scheme
@@ -36,7 +37,31 @@ sub build_case_normalizer {
     return {}
   }
 }
-sub build_character_normalizer        { return {} }
+sub build_character_normalizer        {
+  my ($self) = @_;
+  #
+  # --------------------------------------------
+  # http://tools.ietf.org/html/rfc3987
+  # --------------------------------------------
+  #
+  # 5.3.2.2.  Character Normalization
+  #
+  # [The exceptions are] conversion
+  # from a non-digital form, and conversion from a non-UCS-based
+  # character encoding to a UCS-based character encoding. In these cases,
+  # NFC or a normalizing transcoder using NFC MUST be used for
+  # interoperability.
+  #
+  if (! $self->is_character_normalized) {
+    return { '' => sub { use Data::Dumper;
+                         print STDERR "BEFORE: " . Dumper($_[2]);
+                         my $after = normalize('C',  $_[2]);
+                         print STDERR "AFTER: " . Dumper($after);
+                         normalize('C',  $_[2]) } }
+  } else {
+    return {}
+  }
+}
 sub build_percent_encoding_normalizer { return {} }
 sub build_path_segment_normalizer     { return {} }
 sub build_scheme_based_normalizer     { return {} }

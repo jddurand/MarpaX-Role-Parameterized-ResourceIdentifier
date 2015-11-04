@@ -253,11 +253,9 @@ role {
     }
     #
     # The normalization ladder
+    # Each normalization is applied on the previous one
     #
     foreach my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
-      #
-      # For each normalized value, we apply the previous normalizers in order
-      #
       do { $rc->[$inormalizer] = $self->_get_normalizer($_)->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
     }
     #
@@ -287,13 +285,46 @@ role {
                      my ($self, $input) = @_;
 
                      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+                     #
+                     # A very special case is the input itself, before the parsing
+                     # We want to apply eventual normalizers and converters on it.
+                     # To identify this special, $field and $lhs are both the
+                     # empty string, i.e. a situation that can never happen during
+                     # parsing
+                     #
+                     # The normalization ladder
+                     #
+                     foreach my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
+                       #
+                       # For each normalized value, we apply the previous normalizers in order
+                       #
+                       do { $input = $self->_get_normalizer($_)->($self, '', $input, '') } for ($indice_normalizer_start..$inormalizer);
+                     }
+                     #
+                     # The converters. Every entry may have its own converter.
+                     #
+                     foreach my $iconverter ($indice_converter_start..$indice_converter_end) {
+                       #
+                       # For each converted value, we apply the previous converters in order
+                       #
+                       $input = $self->_get_converter($iconverter)->($self, '', $input, '');
+                     }
+                     #
+                     # Parse (may croak)
+                     #
                      $r->read(\$input);
                      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
                      $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
+                     #
+                     # Check result
+                     #
                      my $value_ref = $r->value($self);
                      croak "[$type] No parse tree value" unless Ref->check($value_ref);
                      my $value = ${$value_ref};
                      croak "[$type] Invalid parse tree value" unless ArrayRef->check($value);
+                     #
+                     # Store result
+                     #
                      foreach (0..$MAX) {
                        $self->_structs->[$_]->output($value->[$_]);
                        $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description($_)])->Dump)
