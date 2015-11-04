@@ -45,6 +45,7 @@ has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub
 has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } );
 has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } );
 has is_character_normalized => ( is => 'ro',  isa => Bool,        default => sub {   !!1 } );
+has default_port            => ( is => 'ro',  isa => Int|Undef,   default => sub { undef } );
 has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
 has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => sub {
                                    [
@@ -361,7 +362,7 @@ role {
   #
   # Create methods to remember pct_encoded, reserved and unreserved
   #
-  install_modifier($whoami, 'fresh', 'pct_encoded' => sub { $pct_encoded });
+  install_modifier($whoami, 'fresh', 'pct_encoded' => sub { $PARAMS->{pct_encoded} }); # Because we did // '' on $pct_encoded
   install_modifier($whoami, 'fresh', 'reserved'    => sub { $reserved });
   install_modifier($whoami, 'fresh', 'unreserved'  => sub { $unreserved });
 };

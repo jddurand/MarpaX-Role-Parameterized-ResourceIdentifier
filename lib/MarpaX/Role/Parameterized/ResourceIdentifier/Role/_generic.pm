@@ -75,6 +75,28 @@ around build_case_normalizer => sub {
   $rc
 };
 
+#
+# 5.3.3.  Scheme-Based Normalization
+#
+# In general, an IRI that uses the generic syntax for authority with an
+# empty path should be normalized to a path of "/".
+#
+# Likewise, an
+# explicit ":port", for which the port is empty or the default for the
+# scheme, is equivalent to one where the port and its ":" delimiter are
+# elided and thus should be removed by scheme-based normalization
+#
+around build_scheme_based_normalizer => sub {
+  my ($orig, $self) = (shift, shift);
+
+  my $rc = $self->$orig(@_);
+  $rc->{path} = sub { length($_[2]) ? $_[2] : '/' };
+  if (! Undef->check($self->default_port)) {
+    my $default_port= quotemeta($self->default_port);
+    $rc->{authority} = sub { print STDERR "Authority is $_[2] ==> " . ($_[2] =~ /^.*(?=:$default_port?)$/p ? ${^MATCH} : $_[2]) . "\n"; $_[2] =~ /^.*(?=:$default_port?)$/p ? ${^MATCH} : $_[2] }
+  }
+  $rc
+};
 sub _domain_to_ascii {
   #
   # Arguments: ($self, $field, $value, $lhs) = @_
