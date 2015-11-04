@@ -547,8 +547,11 @@ sub _generate_impl_attributes {
   }
   my $type_names = "_${type}_names";
   my $type_sub = "_${type}_sub";
-  my @type_names = @_;
-  has $type_names  => (is => 'ro', isa => ArrayRef[Str], default => sub { \@type_names });
+  my @type_names = ();
+  push(@type_names, undef) for (0..$indice_start - 1);
+  push(@type_names, @_);
+  push(@type_names, undef) for ($indice_end + 1..$MAX);
+  has $type_names  => (is => 'ro', isa => ArrayRef[Str|Undef], default => sub { \@type_names });
   has $type_sub    => (is => 'ro', isa => ArrayRef[CodeRef|Undef], lazy => 1,
                        handles_via => 'Array',
                        handles => {
@@ -569,7 +572,7 @@ sub _build_impl_sub {
     if (($_ < $istart) || ($_ > $iend)) {
       push(@array, undef);
     } else {
-      my $name = $self->$names->[$_ - $istart];
+      my $name = $self->$names->[$_];
       my $exists = "exists_$name";
       my $getter = "get_$name";
       push(@array, sub {
