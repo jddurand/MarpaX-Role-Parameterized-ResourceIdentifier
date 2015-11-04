@@ -34,18 +34,45 @@ use constant {
   ESCAPED                     => 10, # Concat: no,  Normalize: no,  Convert: no
   _COUNT                      => 11
 };
-our $MAX   = _COUNT - 1;
-#
+our $MAX                         = _COUNT - 1;
+our $indice_concatenate_start    = RAW;
+our $indice_concatenate_end      = PROTOCOL_BASED_NORMALIZED;
+our $indice_normalizer_start     = CASE_NORMALIZED;
+our $indice_normalizer_end       = PROTOCOL_BASED_NORMALIZED;
+our $indice_converter_start      = URI_CONVERTED;
+our $indice_converter_end        = IRI_CONVERTED;
+our @normalizer_names = qw/case_normalizer
+                           character_normalizer
+                           percent_encoding_normalizer
+                           path_segment_normalizer
+                           scheme_based_normalizer
+                           protocol_based_normalizer/;
+our @converter_names = qw/uri_converter
+                          iri_converter/;
+# ------------------------------------------------------------
 # Explicit slots for all supported attributes in input, scheme
 # is explicitely ignored, it is handled only by _top
-#
-has input                   => ( is => 'rwp', isa => Str,         trigger => 1 );
+# ------------------------------------------------------------
+has input                   => ( is => 'rwp', isa => Str,         trigger => 1 );             # Setted by _top
 has has_recognized_scheme   => ( is => 'rwp', isa => Bool,        default => sub {   !!0 } ); # Setted eventually by _top
-has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } );
-has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } );
-has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } );
-has is_character_normalized => ( is => 'ro',  isa => Bool,        default => sub {   !!1 } );
-has default_port            => ( is => 'ro',  isa => Int|Undef,   default => sub { undef } );
+has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } ); # Setted eventually by _top
+has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } ); # Setted eventually by _top
+has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } ); # Setted eventually by _top
+# ----------------------------------------------------------------------------
+# Slots that implementations should 'around' on the builders for customization
+# ----------------------------------------------------------------------------
+has pct_encoded             => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
+has reserved                => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
+has unreserved              => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
+has is_character_normalized => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_is_character_normalized' );
+has default_port            => ( is => 'ro',  isa => Int|Undef,   lazy => 1, builder => 'build_default_port' );
+has reg_name_is_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_is_domain_name' );
+__PACKAGE__->_generate_attributes('normalizer', $indice_normalizer_start, $indice_normalizer_end, @normalizer_names);
+__PACKAGE__->_generate_attributes('converter', $indice_converter_start, $indice_converter_end, @converter_names);
+
+# --------------
+# Internal slots
+# --------------
 has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
 has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => sub {
                                    [
@@ -63,40 +90,6 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                    ]
                                  }
                                );
-
-# =============================================================================
-# Concatenation: Semantics fixed inside this role
-# =============================================================================
-our $indice_concatenate_start    = RAW;
-our $indice_concatenate_end      = PROTOCOL_BASED_NORMALIZED;
-
-# =============================================================================
-# Normalizers : Semantics left to the implementation
-# =============================================================================
-our $indice_normalizer_start     = CASE_NORMALIZED;
-our $indice_normalizer_end       = PROTOCOL_BASED_NORMALIZED;
-__PACKAGE__->_generate_impl_attributes('normalizer',
-                                       $indice_normalizer_start,
-                                       $indice_normalizer_end,
-                                       qw/case_normalizer
-                                          character_normalizer
-                                          percent_encoding_normalizer
-                                          path_segment_normalizer
-                                          scheme_based_normalizer
-                                          protocol_based_normalizer/
-                                      );
-
-# =============================================================================
-# Converters : implementation dependant
-# =============================================================================
-our $indice_converter_start      = URI_CONVERTED;
-our $indice_converter_end        = IRI_CONVERTED;
-__PACKAGE__->_generate_impl_attributes('converter',
-                                       $indice_converter_start,
-                                       $indice_converter_end,
-                                       qw/uri_converter
-                                          iri_converter/
-                                      );
 
 # =============================================================================
 # Parameter validation
@@ -131,7 +124,7 @@ role {
   my $bnf         = $PARAMS->{bnf};
   my $reserved    = $PARAMS->{reserved};
   my $unreserved  = $PARAMS->{unreserved};
-  my $pct_encoded = $PARAMS->{pct_encoded} // '';
+  my $pct_encoded = $PARAMS->{pct_encoded};
   my $mapping     = $PARAMS->{mapping};
 
   #
@@ -145,7 +138,6 @@ role {
   #
   $bnf = ":default ::= action => $action_full_name\n$bnf";
 
-  my $reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
   my $is_common   = $type eq 'common';
   my $is_generic  = $type eq 'generic';
   #
@@ -203,7 +195,7 @@ role {
     # Unescaped section - to be done only if this is a percent encoded rule
     #
     my $unescape_ok = 1;
-    if ($lhs eq $pct_encoded) {
+    if ($lhs eq $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded) {
       try {
         my $octets = '';
         while ($rc->[RAW] =~ m/(?<=%)[^%]+/gp) {
@@ -237,7 +229,7 @@ role {
       #
       # If current LHS is <pct encoded>, then input is the decoded section, else the arguments
       #
-      foreach ($lhs eq $pct_encoded ? $rc->[UNESCAPED] : @args) {
+      foreach ($lhs eq $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded ? $rc->[UNESCAPED] : @args) {
         if (ref) {
           #
           # This make sure a section is not escaped twice
@@ -248,7 +240,7 @@ role {
           # This is a lexeme or a successully decoded <pct encoded> section
           #
           foreach (split '') {
-            if ($_ =~ $reserved_or_unreserved) {
+            if ($_ =~ $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::reserved_or_unreserved) {
               $rc->[ESCAPED] .= $_
             } else {
               my $character = $_;
@@ -273,12 +265,12 @@ role {
     # For every normalized value, run also previous normalizers
     #
     for my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
-      do { $rc->[$inormalizer] = $self->_get_normalizer($_)->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
+      do { $rc->[$inormalizer] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
     }
     #
     # The converters. Every entry is independant.
     #
-    do { $rc->[$_] = $self->_get_converter($_)->($self, $field, $rc->[$_], $lhs) } for ($indice_converter_start..$indice_converter_end);
+    do { $rc->[$_] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, $field, $rc->[$_], $lhs) } for ($indice_converter_start..$indice_converter_end);
 
     $rc
   };
@@ -299,6 +291,16 @@ role {
 
                      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
                      #
+                     # For performance reason, cache all $self-> accesses
+                     #
+                     my $reserved   = $self->reserved;
+                     my $unreserved = $self->unreserved;
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded            = $self->pct_encoded // ''; # Can be undef
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs               = $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper     = $self->_normalizer_wrapper;
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper      = $self->_converter_wrapper;
+                     #
                      # A very special case is the input itself, before the parsing
                      # We want to apply eventual normalizers and converters on it.
                      # To identify this special, $field and $lhs are both the
@@ -309,19 +311,18 @@ role {
                      #
                      # The normalization ladder
                      #
-                     do { $input = $self->_get_normalizer($_)->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
+                     do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
                      $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Normalized input                 '])->Dump);
                      #
                      # The converters. Every entry is independant.
                      #
-                     do { $input = $self->_get_converter($_)->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
+                     do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
                      $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Converted input                  '])->Dump);
                      #
                      # Parse (may croak)
                      #
                      $r->read(\$input);
                      croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-                     $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
                      #
                      # Check result
                      #
@@ -352,26 +353,31 @@ role {
                      # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
                      my $array_ref = $self->$args2array_sub($lhs, $field, @args);
                      # $self->_logger->tracef('%s:   %s[OUT] %s', $whoami, $field || $lhs || '', $array_ref);
-                     my $structs = $self->_structs;
                      if (defined($field)) {
                        #
                        # Segments is special
                        #
                        if ($field eq 'segments') {
-                         push(@{$structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
+                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
                        } else {
-                         $structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
+                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
                        }
                      }
                      $array_ref
                    }
                   );
-  #
-  # Create methods to remember pct_encoded, reserved and unreserved
-  #
-  install_modifier($whoami, 'fresh', 'pct_encoded' => sub { $PARAMS->{pct_encoded} }); # Because we did // '' on $pct_encoded
-  install_modifier($whoami, 'fresh', 'reserved'    => sub { $reserved });
-  install_modifier($whoami, 'fresh', 'unreserved'  => sub { $unreserved });
+  # ----------------------------------------------------
+  # The builders that the implementation should 'around'
+  # ----------------------------------------------------
+  install_modifier($whoami, 'fresh', 'build_pct_encoded'              => sub {           $pct_encoded });
+  install_modifier($whoami, 'fresh', 'build_reserved'                 => sub {              $reserved });
+  install_modifier($whoami, 'fresh', 'build_unreserved'               => sub {            $unreserved });
+  install_modifier($whoami, 'fresh', 'build_is_character_normalized'  => sub {                    !!1 });
+  install_modifier($whoami, 'fresh', 'build_default_port'             => sub {                  undef });
+  install_modifier($whoami, 'fresh', 'build_reg_name_is_domain_name'  => sub {                    !!0 });
+  foreach (@normalizer_names, @converter_names) {
+    install_modifier($whoami, 'fresh', "build_$_"                     => sub {              return {} });
+  }
 };
 # =============================================================================
 # Instance methods
@@ -530,13 +536,14 @@ sub remove_dot_segments {
 # =============================================================================
 # Internal class methods
 # =============================================================================
-sub _generate_impl_attributes {
+sub _generate_attributes {
   my $class = shift;
   my $type = shift;
   my ($indice_start, $indice_end) = (shift, shift);
   foreach (@_) {
     my $builder = "build_$_";
-    has $_ => (is => 'ro', isa => HashRef[CodeRef], lazy => 1,
+    has $_ => (is => 'ro', isa => HashRef[CodeRef],
+               lazy => 1,
                builder => $builder,
                handles_via => 'Hash',
                handles => {
@@ -549,27 +556,23 @@ sub _generate_impl_attributes {
                            "values_$_" => 'values',
                           }
               );
-    #
-    # Implementations should provide the builders
-    #
-    requires $builder;
   }
-  my $type_names = "_${type}_names";
-  my $type_sub = "_${type}_sub";
-  my @type_names = ();
-  push(@type_names, undef) for (0..$indice_start - 1);
-  push(@type_names, @_);
-  push(@type_names, undef) for ($indice_end + 1..$MAX);
-  has $type_names  => (is => 'ro', isa => ArrayRef[Str|Undef], default => sub { \@type_names });
-  has $type_sub    => (is => 'ro', isa => ArrayRef[CodeRef|Undef], lazy => 1,
-                       handles_via => 'Array',
-                       handles => {
-                                   "_get_$type" => 'get'
-                                  },
-                       builder => sub {
-                         $_[0]->_build_impl_sub($indice_start, $indice_end, $type_names)
-                       }
-                      );
+  my $_type_names   = "_${type}_names";
+  my $_type_wrapper = "_${type}_wrapper";
+  my @_type_names = ();
+  push(@_type_names, undef) for (0..$indice_start - 1);
+  push(@_type_names, @_);
+  push(@_type_names, undef) for ($indice_end + 1..$MAX);
+  has $_type_names   => (is => 'ro', isa => ArrayRef[Str|Undef], default => sub { \@_type_names });
+  has $_type_wrapper => (is => 'ro', isa => ArrayRef[CodeRef|Undef], lazy => 1,
+                         handles_via => 'Array',
+                         handles => {
+                                     "_get_$type" => 'get'
+                                    },
+                         builder => sub {
+                           $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names)
+                         }
+                        );
 }
 # =============================================================================
 # Internal instance methods

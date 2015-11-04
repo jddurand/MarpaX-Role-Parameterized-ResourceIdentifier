@@ -1,18 +1,14 @@
 use strict;
 use warnings FATAL => 'all';
 
-package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_top;
+package MarpaX::Role::Parameterized::ResourceIdentifier::Impl::_top;
 
-# ABSTRACT: Internationalized Resource Identifier (IRI) : _top implementation
+# ABSTRACT: Resource Identifier: top level implementation
 
 # VERSION
 
 # AUTHORITY
 
-#
-# This is not really a role, because we want to have full control over
-# what new returns
-#
 use Carp qw/croak/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Role::BUILDARGS qw/BUILDARGS/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Types -all;
