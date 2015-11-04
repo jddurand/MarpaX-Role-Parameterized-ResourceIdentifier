@@ -50,14 +50,14 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                    [
                                     'Raw value                        ',
                                     'Unescaped value                  ',
+                                    'URI converted value              ',
+                                    'IRI converted value              ',
                                     'Case normalized value            ',
                                     'Character normalized value       ',
                                     'Percent encoding mormalized value',
                                     'Path segment normalized value    ',
                                     'Scheme based normalized value    ',
-                                    'Escaped value                    ',
-                                    'URI converted value              ',
-                                    'IRI converted value              ',
+                                    'Protocol based normalized value  ',
                                     'Escaped value                    '
                                    ]
                                  }
