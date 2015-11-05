@@ -60,7 +60,7 @@ our @converter_names = qw/uri_converter
 # is explicitely ignored, it is handled only by _top
 # ------------------------------------------------------------
 has input                   => ( is => 'rwp', isa => Str,         predicate => 1           ); # Must be set, usually by _top
-has has_recognized_scheme   => ( is => 'rwp', isa => Bool,        default => sub {   !!0 } ); # Setted eventually by _top
+has has_recognized_scheme   => ( is => 'ro',  isa => Bool,        default => sub {   !!0 } ); # Setted eventually by _top
 has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } ); # Setted eventually by _top
 has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } ); # Setted eventually by _top
 has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } ); # Setted eventually by _top

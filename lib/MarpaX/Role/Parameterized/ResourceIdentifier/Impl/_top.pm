@@ -27,11 +27,13 @@ sub _new_from_specific {
   $scheme = lc($scheme) unless exists($args->{is_scheme_case_sensitive}) && $args->{is_scheme_case_sensitive};
   my $subclass = sprintf('%s::%s', $class, $scheme);
 
+  my %args = %{$args};
+  $args{has_recognized_scheme} = 1;
+
   my $self;
   try {
     use_module($subclass);
-    $self = $subclass->new($args);
-    $self->_set_has_recognized_scheme(TRUE);
+    $self = $subclass->new(\%args);
   };
   $self
 }
