@@ -11,12 +11,10 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Types;
 
 use Type::Library
   -base,
-  -declare => qw /Common Generic SchemeLike AbsoluteReference StringifiedAbsoluteReference/;
+  -declare => qw /Common Generic/;
 use Scalar::Util qw/blessed/;
 use Types::Standard -all;
 use Type::Utils -all;
-use Types::TypeTiny qw/StringLike/;
-use Types::Encodings qw/Bytes/;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use MooX::Struct -rw,
   StructCommon => [ output         => [ isa => Str,           default => sub {    '' } ], # Parse tree value
@@ -45,26 +43,6 @@ use MooX::Struct -rw,
                      segments      => [ isa => ArrayRef[Str], default => sub {  MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new->uri_compat ? [''] : [] } ],
                    ];
 
-declare SchemeLike,
-  as "Type::Tiny"->new(
-                       name       => "SchemeLike",
-                       constraint => sub { $_ =~ /^[A-Za-z][A-Za-z0-9+.-]*$/ },
-                       message    => sub { "$_ ain't looking like a scheme" },
-                      );
-
-declare AbsoluteReference,
-  as "Type::Tiny"->new(
-                       name       => "AbsoluteReference",
-                       constraint => sub { ConsumerOf[__PACKAGE__]->check($_) && $_->is_absolute },
-                       message    => sub { "$_ ain't an absolute resource identifier" },
-                      );
-
-declare StringifiedAbsoluteReference,
-  as "Type::Tiny"->new(
-                       name       => "StringifiedAbsoluteReference",
-                       constraint => sub { my ($str, $caller) = @_; Str->check($str) && $caller->can('new') && AbsoluteReference->check($caller->new($str)) },
-                       message    => sub { "$_ ain't a stringified absolute reference" },
-                      );
 #
 # A little bit painful: MooX::Struct thingies are anonymous classes
 #
