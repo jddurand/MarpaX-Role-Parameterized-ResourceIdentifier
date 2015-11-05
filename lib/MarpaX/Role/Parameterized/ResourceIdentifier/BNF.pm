@@ -187,9 +187,6 @@ role {
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
   my $bnf         = $PARAMS->{bnf};
-  my $reserved    = $PARAMS->{reserved};
-  my $unreserved  = $PARAMS->{unreserved};
-  my $pct_encoded = $PARAMS->{pct_encoded};
   my $mapping     = $PARAMS->{mapping};
 
   #
@@ -204,7 +201,6 @@ role {
   $bnf = ":default ::= action => $action_full_name\n$bnf";
 
   my $is_common   = $type eq 'common';
-  my $is_generic  = $type eq 'generic';
   #
   # A bnf package must provide correspondance between grammar symbols
   # and fields in a structure, in the form "<xxx>" => yyy.
@@ -365,9 +361,9 @@ role {
   # ----------------------------------------------------
   # The builders that the implementation should 'around'
   # ----------------------------------------------------
-  install_modifier($whoami, 'fresh', 'build_pct_encoded'              => sub {           $pct_encoded });
-  install_modifier($whoami, 'fresh', 'build_reserved'                 => sub {              $reserved });
-  install_modifier($whoami, 'fresh', 'build_unreserved'               => sub {            $unreserved });
+  install_modifier($whoami, 'fresh', 'build_pct_encoded'              => sub { $PARAMS->{pct_encoded} });
+  install_modifier($whoami, 'fresh', 'build_reserved'                 => sub {    $PARAMS->{reserved} });
+  install_modifier($whoami, 'fresh', 'build_unreserved'               => sub {  $PARAMS->{unreserved} });
   install_modifier($whoami, 'fresh', 'build_is_character_normalized'  => sub {                    !!1 });
   install_modifier($whoami, 'fresh', 'build_default_port'             => sub {                  undef });
   install_modifier($whoami, 'fresh', 'build_reg_name_is_domain_name'  => sub {                    !!0 });
