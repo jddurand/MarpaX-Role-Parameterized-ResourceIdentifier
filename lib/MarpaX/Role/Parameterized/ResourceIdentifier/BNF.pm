@@ -22,17 +22,15 @@ use Types::Standard -all;
 use Try::Tiny;
 use constant {
   RAW                         =>  0, # Concat: yes, Normalize: no,  Convert: no
-  UNESCAPED                   =>  1, # Concat: yes, Normalize: no,  Convert: no
-  URI_CONVERTED               =>  2, # Concat: yes, Normalize: no,  Convert: yes
-  IRI_CONVERTED               =>  3, # Concat: yes, Normalize: no,  Convert: yes
-  CASE_NORMALIZED             =>  4, # Concat: yes, Normalize: yes, Convert: no
-  CHARACTER_NORMALIZED        =>  5, # Concat: yes, Normalize: yes, Convert: no
-  PERCENT_ENCODING_NORMALIZED =>  6, # Concat: yes, Normalize: yes, Convert: no
-  PATH_SEGMENT_NORMALIZED     =>  7, # Concat: yes, Normalize: yes, Convert: no
-  SCHEME_BASED_NORMALIZED     =>  8, # Concat: yes, Normalize: yes, Convert: no
-  PROTOCOL_BASED_NORMALIZED   =>  9, # Concat: yes, Normalize: yes, Convert: no
-  ESCAPED                     => 10, # Concat: no,  Normalize: no,  Convert: no
-  _COUNT                      => 11
+  URI_CONVERTED               =>  1, # Concat: yes, Normalize: no,  Convert: yes
+  IRI_CONVERTED               =>  2, # Concat: yes, Normalize: no,  Convert: yes
+  CASE_NORMALIZED             =>  3, # Concat: yes, Normalize: yes, Convert: no
+  CHARACTER_NORMALIZED        =>  4, # Concat: yes, Normalize: yes, Convert: no
+  PERCENT_ENCODING_NORMALIZED =>  5, # Concat: yes, Normalize: yes, Convert: no
+  PATH_SEGMENT_NORMALIZED     =>  6, # Concat: yes, Normalize: yes, Convert: no
+  SCHEME_BASED_NORMALIZED     =>  7, # Concat: yes, Normalize: yes, Convert: no
+  PROTOCOL_BASED_NORMALIZED   =>  8, # Concat: yes, Normalize: yes, Convert: no
+  _COUNT                      =>  9
 };
 our $MAX                         = _COUNT - 1;
 our $indice_concatenate_start    = RAW;
@@ -53,7 +51,7 @@ our @converter_names = qw/uri_converter
 # Explicit slots for all supported attributes in input, scheme
 # is explicitely ignored, it is handled only by _top
 # ------------------------------------------------------------
-has input                   => ( is => 'rwp', isa => Str,         trigger => 1 );             # Setted by _top
+has input                   => ( is => 'rwp', isa => Str,         predicate => 1           ); # Must be set, usually by _top
 has has_recognized_scheme   => ( is => 'rwp', isa => Bool,        default => sub {   !!0 } ); # Setted eventually by _top
 has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } ); # Setted eventually by _top
 has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } ); # Setted eventually by _top
@@ -77,7 +75,6 @@ has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
 has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => sub {
                                    [
                                     'Raw value                        ',
-                                    'Unescaped value                  ',
                                     'URI converted value              ',
                                     'IRI converted value              ',
                                     'Case normalized value            ',
@@ -85,12 +82,20 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                     'Percent encoding normalized value',
                                     'Path segment normalized value    ',
                                     'Scheme based normalized value    ',
-                                    'Protocol based normalized value  ',
-                                    'Escaped value                    '
+                                    'Protocol based normalized value  '
                                    ]
                                  }
                                );
 
+# =============================================================================
+# We want parsing to happen immeidately AFTER object was build and then at
+# every input reconstruction
+# =============================================================================
+sub BUILD {
+  my ($self) = @_;
+  $self->_parse;
+  after input => sub { $self->_parse }
+}
 # =============================================================================
 # Parameter validation
 # =============================================================================
@@ -192,83 +197,13 @@ role {
       do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
     }
     #
-    # Unescaped section - to be done only if this is a percent encoded rule
-    #
-    my $unescape_ok = 1;
-    if ($lhs eq $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded) {
-      try {
-        my $octets = '';
-        while ($rc->[RAW] =~ m/(?<=%)[^%]+/gp) {
-          $octets .= chr(hex(${^MATCH}))
-        }
-        $rc->[UNESCAPED] = MarpaX::RFC::RFC3629->new($octets)->output
-      } catch {
-        $self->_logger->warnf('%s: %s', $whoami, $_) for split(/\n/, "$_");
-        $rc->[UNESCAPED] = $rc->[RAW];
-        $unescape_ok = 0;
-        return
-      }
-    }
-    #
-    # Escape section - this must be done only once.
-    # We look to individual components, per def those not already escaped are the lexemes.
-    # If a character is not in the reserved section, then everything explicitely not in the unreserved
-    # section is escaped.
-    #
-    # We say character: this mean that when we try to encode, this is after the eventual decode.
-    # We take care of one exception: when the lhs is <pct encoded> and the decoding failed.
-    #
-    if (! $unescape_ok) {
-      #
-      # Can happen only in a percent-encoded LHS. It failed. So we keep the section as it it,
-      # just making sure it is uppercased to be compliant with the spec. Per def the percent-encoded
-      # section contains only ASCII characters, so uc() is ok.
-      #
-      $rc->[ESCAPED] = uc($rc->[RAW])
-    } else {
-      #
-      # If current LHS is <pct encoded>, then input is the decoded section, else the arguments
-      #
-      foreach ($lhs eq $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded ? $rc->[UNESCAPED] : @args) {
-        if (ref) {
-          #
-          # This make sure a section is not escaped twice
-          #
-          $rc->[ESCAPED] .= $_->[ESCAPED]
-        } else {
-          #
-          # This is a lexeme or a successully decoded <pct encoded> section
-          #
-          foreach (split '') {
-            if ($_ =~ $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::reserved_or_unreserved) {
-              $rc->[ESCAPED] .= $_
-            } else {
-              my $character = $_;
-              try {
-                $rc->[ESCAPED] .= do {
-                  #
-                  # This may croak
-                  #
-                  join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)))
-                }
-              } catch {
-                $self->_logger->warnf('%s: %s', $whoami, $_) for split(/\n/, "$_");
-                $rc->[ESCAPED] .= $character
-              }
-            }
-          }
-        }
-      }
-    }
-    #
-    # The normalization ladder
-    # For every normalized value, run also previous normalizers
+    # Normalize
     #
     for my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
       do { $rc->[$inormalizer] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
     }
     #
-    # The converters. Every entry is independant.
+    # Convert
     #
     do { $rc->[$_] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, $field, $rc->[$_], $lhs) } for ($indice_converter_start..$indice_converter_end);
 
@@ -285,9 +220,12 @@ role {
                            ranking_method    => 'high_rule_only',
                            grammar           => $grammar
                           );
-  install_modifier($whoami, 'fresh', '_trigger_input',
+  install_modifier($whoami, 'fresh', '_parse',
                    sub {
-                     my ($self, $input) = @_;
+                     my ($self) = @_;
+
+                     croak "Input not set" unless $self->has_input;
+                     my $input = $self->input;
 
                      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
                      #
@@ -390,34 +328,30 @@ sub output_by_indice         { $_[0]->struct_by_indice($_[1])->output }
 # Class methods
 # =============================================================================
 sub indice_raw                         {                            RAW }
-sub indice_unescaped                   {                      UNESCAPED }
 sub indice_case_normalized             {                CASE_NORMALIZED }
 sub indice_character_normalized        {           CHARACTER_NORMALIZED }
 sub indice_percent_encoding_normalized {    PERCENT_ENCODING_NORMALIZED }
 sub indice_path_segment_normalized     {        PATH_SEGMENT_NORMALIZED }
 sub indice_scheme_based_normalized     {        SCHEME_BASED_NORMALIZED }
 sub indice_protocol_based_normalized   {      PROTOCOL_BASED_NORMALIZED }
-sub indice_escaped                     {                        ESCAPED }
 sub indice_uri_converted               {                  URI_CONVERTED }
 sub indice_iri_converted               {                  IRI_CONVERTED }
-sub indice_default                     {               indice_escaped() }
 sub indice_normalized                  {         $indice_normalizer_end }
+sub indice_default                     {            indice_normalized() }
 sub indice {
   my ($class, $what) = @_;
 
   croak "Invalid undef argument" if (! defined($what));
 
   if    ($what eq 'RAW'                        ) { return                         RAW }
-  elsif ($what eq 'UNESCAPED'                  ) { return                   UNESCAPED }
+  elsif ($what eq 'URI_CONVERTED'              ) { return               URI_CONVERTED }
+  elsif ($what eq 'IRI_CONVERTED'              ) { return               IRI_CONVERTED }
   elsif ($what eq 'CASE_NORMALIZED'            ) { return             CASE_NORMALIZED }
   elsif ($what eq 'CHARACTER_NORMALIZED'       ) { return        CHARACTER_NORMALIZED }
   elsif ($what eq 'PERCENT_ENCODING_NORMALIZED') { return PERCENT_ENCODING_NORMALIZED }
   elsif ($what eq 'PATH_SEGMENT_NORMALIZED'    ) { return     PATH_SEGMENT_NORMALIZED }
   elsif ($what eq 'SCHEME_BASED_NORMALIZED'    ) { return     SCHEME_BASED_NORMALIZED }
   elsif ($what eq 'PROTOCOL_BASED_NORMALIZED'  ) { return   PROTOCOL_BASED_NORMALIZED }
-  elsif ($what eq 'ESCAPED'                    ) { return                     ESCAPED }
-  elsif ($what eq 'URI_CONVERTED'              ) { return               URI_CONVERTED }
-  elsif ($what eq 'IRI_CONVERTED'              ) { return               IRI_CONVERTED }
   else                                           { croak "Invalid argument $what"     }
 }
 
@@ -533,6 +467,50 @@ sub remove_dot_segments {
   #
   return $output;
 }
+sub unescape {
+  my ($class, $value, $unreserved) = @_;
+
+  my $unescaped_ok = 1;
+  my $unescaped;
+  try {
+    my $octets = '';
+    while ($value =~ m/(?<=%)[^%]+/gp) {
+      $octets .= chr(hex(${^MATCH}))
+    }
+    $unescaped = MarpaX::RFC::RFC3629->new($octets)->output
+  } catch {
+    $unescaped_ok = 0;
+    return
+  };
+  #
+  # Keep only characters in the unreserved set
+  #
+  if ($unescaped_ok) {
+    my $new_value = '';
+    my $position_in_original_value = 0;
+    my $reescaped_ok = 1;
+    foreach (split('', $unescaped)) {
+      my $reencoded_length;
+      try {
+        my $character = $_;
+        my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
+        $reencoded_length = length($reencoded);
+      } catch {
+        $reescaped_ok = 0;
+      };
+      last if (! $reescaped_ok);
+      if ($_ =~ $unreserved) {
+        $new_value .= $_;
+      } else {
+        $new_value = substr($value, $position_in_original_value, $reencoded_length);
+      }
+      $position_in_original_value += $reencoded_length;
+    }
+    $value = $new_value if ($reescaped_ok);
+  }
+  $value
+}
+
 # =============================================================================
 # Internal class methods
 # =============================================================================
