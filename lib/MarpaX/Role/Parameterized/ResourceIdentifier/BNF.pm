@@ -5,7 +5,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Data::Dumper;
-use Encode qw/encode/;
+use Encode 2.21 qw/find_encoding encode decode/; # 2.21 for mime_name support
 use Marpa::R2;
 use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
@@ -19,6 +19,7 @@ use Role::Tiny;
 use Type::Params qw/compile/;
 use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
+use Types::TypeTiny qw/StringLike/;
 use Try::Tiny;
 use constant {
   RAW                         =>  0, # Concat: yes, Normalize: no,  Convert: no
@@ -55,22 +56,23 @@ our @normalizer_names = qw/case_normalizer
                            protocol_based_normalizer/;
 our @converter_names = qw/uri_converter
                           iri_converter/;
+our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
 # ------------------------------------------------------------
 # Explicit slots for all supported attributes in input, scheme
 # is explicitely ignored, it is handled only by _top
 # ------------------------------------------------------------
-has input                   => ( is => 'rwp', isa => Str,         predicate => 1           ); # Must be set, usually by _top
-has has_recognized_scheme   => ( is => 'ro',  isa => Bool,        default => sub {   !!0 } ); # Setted eventually by _top
-has octets                  => ( is => 'ro',  isa => Bytes|Undef, default => sub { undef } ); # Setted eventually by _top
-has encoding                => ( is => 'ro',  isa => Str|Undef,   default => sub { undef } ); # Setted eventually by _top
-has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { undef } ); # Setted eventually by _top
+has input                   => ( is => 'rwp', isa => StringLike,  predicate => 1                      );
+has octets                  => ( is => 'ro',  isa => Bytes,       predicate => 1                      );
+has encoding                => ( is => 'ro',  isa => Str,         predicate => 1                      );
+has has_recognized_scheme   => ( is => 'ro',  isa => Bool,        default => sub {   !!0 }            );
+has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { Encode::FB_CROAK } );
+has is_character_normalized => ( is => 'rwp', isa => Bool,        predicate => 1, lazy => 1, builder => 'build_is_character_normalized' );
 # ----------------------------------------------------------------------------
 # Slots that implementations should 'around' on the builders for customization
 # ----------------------------------------------------------------------------
 has pct_encoded             => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
 has reserved                => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
 has unreserved              => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
-has is_character_normalized => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_is_character_normalized' );
 has default_port            => ( is => 'ro',  isa => Int|Undef,   lazy => 1, builder => 'build_default_port' );
 has reg_name_is_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_is_domain_name' );
 __PACKAGE__->_generate_attributes('normalizer', $indice_normalizer_start, $indice_normalizer_end, @normalizer_names);
@@ -99,8 +101,54 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 # We want parsing to happen immeidately AFTER object was build and then at
 # every input reconstruction
 # =============================================================================
+our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
 sub BUILD {
   my ($self) = @_;
+  #
+  # At least input or octets must be set
+  #
+  croak 'Please specify either input or octets' if (! $self->has_input && ! $self->has_octets);
+  #
+  # It is illegal to have both input and octets
+  #
+  croak 'Please specify only one of input or octets, not both' if ($self->has_input && $self->has_octets);
+  #
+  # It is illegal to octets without encoding
+  #
+  croak 'Please specify encoding' if ($self->has_octets && ! $self->has_encoding);
+  #
+  # Validate input
+  #
+  if ($self->has_input) {
+    #
+    # Eventual stringification
+    #
+    my $input = $self->input;
+    $self->_set_input("$input");
+  } else {
+    if (! $self->has_is_character_normalized) {
+      my $encoding_mime_name = find_encoding($self->encoding)->mime_name;
+      $self->_set_is_character_normalized(scalar(grep { $encoding_mime_name eq $_ } @ucs_mime_name));
+    }
+    #
+    # Encode::encode will croak by itself if decode_strategy is not ok
+    # Encode::encode is modifying octets in place -;
+    #
+    my $octets = $self->octets;
+    $self->_set_input(decode($self->encoding, $octets, $self->decode_strategy));
+  }
+  if ($setup->uri_compat) {
+    #
+    # Copy from URI:
+    # Get rid of potential wrapping
+    #
+    my $input = $self->input;
+    $input =~ s/^<(?:URL:)?(.*)>$/$1/;
+    $input =~ s/^"(.*)"$/$1/;
+    $input =~ s/^\s+//;
+    $input =~ s/\s+$//;
+    $self->_set_input($input);
+  }
   $self->_parse;
   around input => sub {
     my ($orig, $self) = (shift, shift);
@@ -129,7 +177,7 @@ our $check = compile(
 # =============================================================================
 role {
   my $params = shift;
-
+  #
   # -----------------------
   # Sanity checks on params
   # -----------------------
@@ -178,13 +226,11 @@ role {
   # -----
   # Setup
   # -----
-  my $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;
   my $marpa_trace_values    = $setup->marpa_trace_values;
   my $marpa_trace           = $setup->marpa_trace;
   my $uri_compat            = $setup->uri_compat;
 
-  #
   # -------
   # Logging
   # -------
@@ -195,9 +241,11 @@ role {
   open(my $trace_file_handle, ">", \$trace) || croak "[$type] Cannot open trace filehandle, $!";
   local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $whoami;
   tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
+
   # ---------------------------------------------------------------------
   # This stub will be the one doing the real work, called by Marpa action
   # ---------------------------------------------------------------------
+  #
   my %MAPPING = %{$mapping};
   my $args2array_sub = sub {
     my ($self, $lhs, $field, @args) = @_;
