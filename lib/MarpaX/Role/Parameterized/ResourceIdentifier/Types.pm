@@ -16,28 +16,42 @@ use Scalar::Util qw/blessed/;
 use Types::Standard -all;
 use Type::Utils -all;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
+use Data::Printer 0.36
+  colored       => 1,
+  print_escapes => 1,
+  escape_chars  => 'nonascii',
+  indent        => 4,   # to make sure our forced_indent is ok
+  deparse       => 1;   # To make sure we have this version at least, for np
 use Data::Dumper;
+use Import::Into;
+use Term::ANSIColor qw/colored/;
+
+our $HAVE_SYS__INFO = eval 'use Sys::Info; 1' || 0;
+eval 'use Win32::Console::ANSI; 1' if _is_windows();
+
 our $TO_STRING = sub {
-  my @ordered_fields = sort $_[0]->FIELDS;
-  Data::Dumper->new([map { $_[0]->$_ } @ordered_fields], \@ordered_fields)
+  my (@fields) = $_[0]->FIELDS;
+  local $Data::Dumper::Indent = 0;
+  local $Data::Dumper::Useqq = 1;
+  my $rc = Data::Dumper->new([map { $_[0]->$_ } @fields], [@fields])->Dump;
+  $rc
 };
 
 our $_data_printer = sub {
-  require Data::Printer::Filter;
-  require Term::ANSIColor;
-  my $self   = shift;
+  my $self = shift;
+  Data::Printer->import;
 
-  my @values = map { scalar &Data::Printer::p(\$_) } @$self;
-  my $label  = Term::ANSIColor::colored($self->TYPE||'struct', 'bright_yellow');
+  my $value = np(%{$self->TO_HASH});
+  my $label = colored($self->TYPE||'struct', 'bold yellow');
 
-  if (grep /\n/, map { $_ // ''} @values) {
-    return sprintf(
-                   "%s[\n\t%s,\n]",
-                   $label,
-                   join(qq[,\n\t], map { s/\n/\n\t/gm; $_ // ''} map { $_ // '' } @values),
-                  );
-  }
-  sprintf('%s[ %s ]', $label, join q[, ], map { $_ // '' } @values);
+  #
+  # This is heuristic, but a priori we will always be three indentations
+  # level below -;
+  #
+  my $forced_indent = '    ' x 4;
+  $value =~ s/^/$forced_indent/msg;
+
+  sprintf('%s%s', $label, $value);
 };
 
 use MooX::Struct -rw,
@@ -76,5 +90,23 @@ use MooX::Struct -rw,
 #
 class_type Common, { class => blessed(StructCommon->new) };
 class_type Generic, { class => blessed(StructGeneric->new) };
+
+sub _is_windows {
+  my $rc;
+
+  if ($HAVE_SYS__INFO) {
+    my $info = Sys::Info->new;
+    my $os   = $info->os();
+    $rc = $os->is_windows;
+  } else {
+    if ($^O =~ /win32/i) {
+      $rc = 1;
+    } else {
+      $rc = 0;
+    }
+  }
+
+  $rc
+}
 
 1;
