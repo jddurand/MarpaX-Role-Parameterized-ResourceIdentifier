@@ -155,6 +155,24 @@ around build_percent_encoding_normalizer => sub {
   $rc
 };
 
+around build_path_segment_normalizer => sub {
+  my ($orig, $self) = (shift, shift);
+  my $rc = $self->$orig(@_);
+  #
+  # --------------------------------------------
+  # http://tools.ietf.org/html/rfc3987
+  # --------------------------------------------
+  #
+  # 5.3.2.4.  Path Segment Normalization
+  #
+  # IRI normalizers should remove dot-segments by
+  # applying the remove_dot_segments algorithm to the path, as described
+  # in section 5.2.4 of [RFC3986].
+  #
+  $rc->{path} = sub { $_[0]->remove_dot_segments($_[2]) };
+  $rc
+};
+
 around build_scheme_based_normalizer => sub {
   my ($orig, $self) = (shift, shift);
   my $rc = $self->$orig(@_);
