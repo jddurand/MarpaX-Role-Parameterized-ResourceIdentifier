@@ -94,7 +94,11 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 sub BUILD {
   my ($self) = @_;
   $self->_parse;
-  after input => sub { $self->_parse }
+  around input => sub {
+    my ($orig, $self) = (shift, shift);
+    $self->$orig(@_);
+    $self->_parse
+  }
 }
 # =============================================================================
 # Parameter validation
