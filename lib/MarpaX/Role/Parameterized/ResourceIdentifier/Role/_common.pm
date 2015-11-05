@@ -32,6 +32,4 @@ around build_character_normalizer => sub {
   $rc
 };
 
-with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::BUILDARGS';
-
 1;

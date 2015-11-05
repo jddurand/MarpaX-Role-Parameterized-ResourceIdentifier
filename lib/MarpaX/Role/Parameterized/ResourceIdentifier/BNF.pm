@@ -61,12 +61,9 @@ our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16
 # Explicit slots for all supported attributes in input, scheme
 # is explicitely ignored, it is handled only by _top
 # ------------------------------------------------------------
-has input                   => ( is => 'rwp', isa => StringLike,  predicate => 1                      );
-has octets                  => ( is => 'ro',  isa => Bytes,       predicate => 1                      );
-has encoding                => ( is => 'ro',  isa => Str,         predicate => 1                      );
-has has_recognized_scheme   => ( is => 'ro',  isa => Bool,        default => sub {   !!0 }            );
-has decode_strategy         => ( is => 'ro',  isa => Any,         default => sub { Encode::FB_CROAK } );
-has is_character_normalized => ( is => 'rwp', isa => Bool,        predicate => 1, lazy => 1, builder => 'build_is_character_normalized' );
+has input                   => ( is => 'rwp', isa => StringLike                            );
+has has_recognized_scheme   => ( is => 'ro',  isa => Bool,        default => sub {   !!0 } );
+has is_character_normalized => ( is => 'rwp', isa => Bool,        default => sub {   !!1 } );
 # ----------------------------------------------------------------------------
 # Slots that implementations should 'around' on the builders for customization
 # ----------------------------------------------------------------------------
@@ -101,54 +98,69 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 # We want parsing to happen immeidately AFTER object was build and then at
 # every input reconstruction
 # =============================================================================
-our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
-sub BUILD {
-  my ($self) = @_;
-  #
-  # At least input or octets must be set
-  #
-  croak 'Please specify either input or octets' if (! $self->has_input && ! $self->has_octets);
-  #
-  # It is illegal to have both input and octets
-  #
-  croak 'Please specify only one of input or octets, not both' if ($self->has_input && $self->has_octets);
-  #
-  # It is illegal to octets without encoding
-  #
-  croak 'Please specify encoding' if ($self->has_octets && ! $self->has_encoding);
-  #
-  # Validate input
-  #
-  if ($self->has_input) {
-    #
-    # Eventual stringification
-    #
-    my $input = $self->input;
-    $self->_set_input("$input");
+our $setup                = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
+our $check_BUILDARGS      = compile(StringLike|HashRef);
+our $check_BUILDARGS_Dict = compile(slurpy Dict[
+                                                input                   => Optional[StringLike],
+                                                octets                  => Optional[Bytes],
+                                                encoding                => Optional[Str],
+                                                decode_strategy         => Optional[Any],
+                                                is_character_normalized => Optional[Bool]
+                                               ]);
+sub BUILDARGS {
+  my ($class, $arg) = @_;
+
+  my ($first_arg) = $check_BUILDARGS->($arg);
+
+  my $input;
+  my $is_character_normalized;
+
+  if (StringLike->check($first_arg)) {
+    $input = "$first_arg";
   } else {
-    if (! $self->has_is_character_normalized) {
-      my $encoding_mime_name = find_encoding($self->encoding)->mime_name;
-      $self->_set_is_character_normalized(scalar(grep { $encoding_mime_name eq $_ } @ucs_mime_name));
+    my ($params)    = $check_BUILDARGS_Dict->(%{$arg});
+
+    croak 'Please specify either input or octets'                if (! exists($params->{input})  && ! exists($params->{octets}));
+    croak 'Please specify only one of input or octets, not both' if (  exists($params->{input})  &&   exists($params->{octets}));
+    croak 'Please specify encoding'                              if (  exists($params->{octets}) && ! exists($params->{encoding}));
+    if (exists($params->{input})) {
+      $input = "$params->{input}";
+    } else {
+      my $octets          = $params->{octets};
+      my $encoding        = $params->{encoding};
+      my $decode_strategy = $params->{decode_strategy} // Encode::FB_CROAK;
+      if (exists($params->{is_character_normalized})) {
+        $is_character_normalized = $params->{is_character_normalized};
+      } else {
+        my $enc_mime_name = find_encoding($encoding)->mime_name;
+        $is_character_normalized = grep { $enc_mime_name eq $_ } @ucs_mime_name;
+      }
+      #
+      # Encode::encode will croak by itself if decode_strategy is not ok
+      #
+      $input = decode($encoding, $octets, $decode_strategy);
     }
-    #
-    # Encode::encode will croak by itself if decode_strategy is not ok
-    # Encode::encode is modifying octets in place -;
-    #
-    my $octets = $self->octets;
-    $self->_set_input(decode($self->encoding, $octets, $self->decode_strategy));
   }
+
   if ($setup->uri_compat) {
     #
     # Copy from URI:
     # Get rid of potential wrapping
     #
-    my $input = $self->input;
     $input =~ s/^<(?:URL:)?(.*)>$/$1/;
     $input =~ s/^"(.*)"$/$1/;
     $input =~ s/^\s+//;
     $input =~ s/\s+$//;
-    $self->_set_input($input);
   }
+
+  my %args = ( input => $input );
+  $args{is_character_normalized} = $is_character_normalized if defined($is_character_normalized);
+
+  \%args
+}
+
+sub BUILD {
+  my ($self) = @_;
   $self->_parse;
   around input => sub {
     my ($orig, $self) = (shift, shift);
@@ -159,18 +171,18 @@ sub BUILD {
 # =============================================================================
 # Parameter validation
 # =============================================================================
-our $check = compile(
-                     slurpy
-                     Dict[
-                          whoami      => Str,
-                          type        => Enum[qw/common generic/],
-                          bnf         => Str,
-                          reserved    => RegexpRef,
-                          unreserved  => RegexpRef,
-                          pct_encoded => Str|Undef,
-                          mapping     => HashRef[Str]
-                         ]
-                    );
+our $check_params = compile(
+                            slurpy
+                            Dict[
+                                 whoami      => Str,
+                                 type        => Enum[qw/common generic/],
+                                 bnf         => Str,
+                                 reserved    => RegexpRef,
+                                 unreserved  => RegexpRef,
+                                 pct_encoded => Str|Undef,
+                                 mapping     => HashRef[Str]
+                                ]
+                           );
 
 # =============================================================================
 # Parameterized role
@@ -182,7 +194,7 @@ role {
   # Sanity checks on params
   # -----------------------
   my ($hash_ref)  = HashRef->($params);
-  my ($PARAMS)    = $check->(%{$hash_ref});
+  my ($PARAMS)    = $check_params->(%{$hash_ref});
 
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
@@ -280,7 +292,6 @@ role {
                    sub {
                      my ($self) = @_;
 
-                     croak "Input not set" unless $self->has_input;
                      my $input = $self->input;
 
                      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
