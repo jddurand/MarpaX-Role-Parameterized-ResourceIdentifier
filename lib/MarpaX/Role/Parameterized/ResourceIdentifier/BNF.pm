@@ -74,6 +74,10 @@ has default_port            => ( is => 'ro',  isa => Int|Undef,   lazy => 1, bui
 has reg_name_is_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_is_domain_name' );
 __PACKAGE__->_generate_attributes('normalizer', $indice_normalizer_start, $indice_normalizer_end, @normalizer_names);
 __PACKAGE__->_generate_attributes('converter', $indice_converter_start, $indice_converter_end, @converter_names);
+# ----------------------------------------------------------------------------
+# Parsing result: this is the output after latest of the normalization steps
+# ----------------------------------------------------------------------------
+has output                  => ( is => 'rwp', isa => Str                                 );
 
 # --------------
 # Internal slots
@@ -336,6 +340,7 @@ role {
                        $self->_structs->[$_]->output($value->[$_]);
                        $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description->[$_]])->Dump)
                      }
+                     $self->_set_output($self->output_by_indice($self->indice_normalized));
                    }
                   );
   #
