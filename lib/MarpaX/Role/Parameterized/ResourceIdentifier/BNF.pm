@@ -32,6 +32,14 @@ use constant {
   PROTOCOL_BASED_NORMALIZED   =>  8, # Concat: yes, Normalize: yes, Convert: no
   _COUNT                      =>  9
 };
+use overload (
+              '""'     => sub { $_[0]->input },
+              '=='     => sub { $_[0]->output_by_indice($_[0]->indice_normalized) eq $_[1]->output_by_indice($_[1]->indice_normalized) },
+              '!='     => sub { $_[0]->output_by_indice($_[0]->indice_normalized) ne $_[1]->output_by_indice($_[1]->indice_normalized) },
+              fallback => 1,
+             );
+
+
 our $MAX                         = _COUNT - 1;
 our $indice_concatenate_start    = RAW;
 our $indice_concatenate_end      = PROTOCOL_BASED_NORMALIZED;
@@ -237,11 +245,9 @@ role {
                      #
                      my $reserved   = $self->reserved;
                      my $unreserved = $self->unreserved;
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded            = $self->pct_encoded // ''; # Can be undef
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::reserved_or_unreserved = qr/(?:$reserved|$unreserved)/;
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs               = $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper     = $self->_normalizer_wrapper;
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper      = $self->_converter_wrapper;
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->_normalizer_wrapper;
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->_converter_wrapper;
                      #
                      # A very special case is the input itself, before the parsing
                      # We want to apply eventual normalizers and converters on it.
@@ -341,7 +347,6 @@ sub indice_protocol_based_normalized   {      PROTOCOL_BASED_NORMALIZED }
 sub indice_uri_converted               {                  URI_CONVERTED }
 sub indice_iri_converted               {                  IRI_CONVERTED }
 sub indice_normalized                  {         $indice_normalizer_end }
-sub indice_default                     {            indice_normalized() }
 sub indice {
   my ($class, $what) = @_;
 
