@@ -162,11 +162,7 @@ sub BUILDARGS {
 sub BUILD {
   my ($self) = @_;
   $self->_parse;
-  around input => sub {
-    my ($orig, $self) = (shift, shift);
-    $self->$orig(@_);
-    $self->_parse
-  }
+  after input => sub { $self->_parse }
 }
 # =============================================================================
 # Parameter validation
