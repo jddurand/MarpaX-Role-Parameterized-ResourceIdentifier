@@ -630,16 +630,16 @@ sub _build_impl_sub {
       my $name = $self->$names->[$_];
       my $exists = "exists_$name";
       my $getter = "get_$name";
-      push(@array, sub {
-             # my ($self, $field, $value, $lhs) = @_;
-             my $criteria = $_[1] || $_[3] || '';
-             #
-             # At run-time, in particular Protocol-based normalizers,
-             # the callbacks can be altered
-             #
-             $_[0]->$exists($criteria) ? goto $_[0]->$getter($criteria) : $_[2]
-           }
-          )
+      my $inlined = <<INLINED;
+  # my (\$self, \$field, \$value, \$lhs) = \@_;
+  my \$criteria = \$_[1] || \$_[3] || '';
+  #
+  # At run-time, in particular Protocol-based normalizers,
+  # the callbacks can be altered
+  #
+  \$_[0]->$exists(\$criteria) ? goto \$_[0]->$getter(\$criteria) : \$_[2]
+INLINED
+      push(@array,eval "sub {$inlined}");
     }
   }
   \@array
