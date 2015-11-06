@@ -276,9 +276,8 @@ role {
     #
     # Normalize
     #
-    for my $inormalizer ($indice_normalizer_start..$indice_normalizer_end) {
-      do { $rc->[$inormalizer] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $field, $rc->[$inormalizer], $lhs) } for ($indice_normalizer_start..$inormalizer);
-    }
+    my $current = $rc->[$indice_normalizer_start];
+    do { $rc->[$_] = $current = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $field, $current, $lhs) } for ($indice_normalizer_start..$indice_normalizer_end);
     #
     # Convert
     #
@@ -298,10 +297,6 @@ role {
                            grammar           => $grammar
                           );
   #
-  # Cloning a MooX::Struct is faster than calling new
-  #
-  my @structs_to_clone = map { $struct_class->new } (0..$MAX);
-  #
   # Marpa optimisation: we cache the registrations. At every recognizer's value() call
   # the actions are checked. But this is static information in our case
   #
@@ -315,7 +310,7 @@ role {
                      #
                      # For performance reason, cache all $self-> accesses
                      #
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->_structs([map { $_->CLONE } @structs_to_clone]);
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0..$MAX];
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->_normalizer_wrapper;
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->_converter_wrapper;
                      #
@@ -364,8 +359,8 @@ role {
                      #
                      # Store result
                      #
-                     do { $self->_structs->[$_]->output($value->[$_]) } for (0..$MAX);
-                     $self->_set_output($self->output_by_indice($self->indice_normalized));
+                     do { $self->{_structs}->[$_]->{output} = $value->[$_] } for (0..$MAX);
+                     $self->{output} = $self->{_structs}->[$indice_normalizer_end]->{output}
                    }
                   );
   #
