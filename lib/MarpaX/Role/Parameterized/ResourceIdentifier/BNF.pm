@@ -226,7 +226,9 @@ role {
   # The structure depend on the type: Common or Generic
   #
   my %fields = ();
-  my @fields = $is_common ? Common->new->FIELDS : Generic->new->FIELDS;
+  my $struct_new = $is_common ? Common->new : Generic->new;
+  my $struct_class = blessed($struct_new);
+  my @fields = $struct_new->FIELDS;
   map { $fields{$_} = 0 } @fields;
   while (my ($key, $value) = each %{$mapping}) {
     croak "[$type] symbol $key must be in the form <...>"
@@ -296,6 +298,10 @@ role {
                            grammar           => $grammar
                           );
   #
+  # Cloning a MooX::Struct is faster than calling new
+  #
+  my @structs_to_clone = map { $struct_class->new } (0..$MAX);
+  #
   # Marpa optimisation: we cache the registrations. At every recognizer's value() call
   # the actions are checked. But this is static information in our case
   #
@@ -309,9 +315,7 @@ role {
                      #
                      # For performance reason, cache all $self-> accesses
                      #
-                     my $reserved   = $self->reserved;
-                     my $unreserved = $self->unreserved;
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->_structs([map { $is_common ? Common->new : Generic->new } (0..$MAX)]);
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->_structs([map { $_->CLONE } @structs_to_clone]);
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->_normalizer_wrapper;
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->_converter_wrapper;
                      #
@@ -321,17 +325,17 @@ role {
                      # empty string, i.e. a situation that can never happen during
                      # parsing
                      #
-                     $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['input                            '])->Dump);
+                     # $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['input                            '])->Dump);
                      #
                      # The normalization ladder
                      #
                      do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
-                     $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Normalized input                 '])->Dump);
+                     # $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Normalized input                 '])->Dump);
                      #
                      # The converters. Every entry is independant.
                      #
                      do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
-                     $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Converted input                  '])->Dump);
+                     # $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Converted input                  '])->Dump);
                      #
                      # Parse (may croak)
                      #
@@ -351,9 +355,12 @@ role {
                      if (! defined($registrations)) {
                        $registrations{$whoami} = $r->registrations();
                      }
-                     croak "[$type] No parse tree value" unless Ref->check($value_ref);
+                     # croak "[$type] No parse tree value" unless Ref->check($value_ref);
+                     #
+                     # This will croak natively if this is not a reference
+                     #
                      my $value = ${$value_ref};
-                     croak "[$type] Invalid parse tree value" unless ArrayRef->check($value);
+                     # croak "[$type] Invalid parse tree value" unless ArrayRef->check($value);
                      #
                      # Store result
                      #
