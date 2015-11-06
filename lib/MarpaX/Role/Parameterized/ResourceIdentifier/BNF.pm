@@ -192,6 +192,7 @@ our $check_params = compile(
 # For Marpa optimisation
 #
 my %registrations = ();
+my %context = ();
 
 role {
   my $params = shift;
@@ -363,12 +364,19 @@ role {
   #
   # Inject the action
   #
+  $context{$whoami} = {};
   install_modifier($whoami, 'fresh', '_action',
                    sub {
                      my ($self, @args) = @_;
-                     my $slg         = $Marpa::R2::Context::slg;
-                     my ($lhs, @rhs) = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
-                     $lhs = "<$lhs>" if (substr($lhs, 0, 1) ne '<');
+                     my ($lhs, @rhs) = @{$context{$whoami}->{$Marpa::R2::Context::rule}
+                                           //=
+                                             do {
+                                               my $slg = $Marpa::R2::Context::slg;
+                                               my @rules = map { $slg->symbol_display_form($_) } $slg->rule_expand($Marpa::R2::Context::rule);
+                                               $rules[0] = "<$rules[0]>" if (substr($rules[0], 0, 1) ne '<');
+                                               \@rules
+                                             }
+                                           };
                      # $self->_logger->tracef('%s: %s ::= %s', $whoami, $lhs, join(' ', @rhs));
                      my $field = $mapping->{$lhs};
                      # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
