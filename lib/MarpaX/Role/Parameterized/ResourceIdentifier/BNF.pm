@@ -614,11 +614,11 @@ sub remove_dot_segments {
     #    then remove that prefix from the input buffer; otherwise,
     #
     if (index($input, '../') == 0) {
-      substr($input, 0, 3, '');
+      substr($input, 0, 3, '')
       # $substep = 'A';
     }
     elsif (index($input, './') == 0) {
-      substr($input, 0, 2, '');
+      substr($input, 0, 2, '')
       # $substep = 'A';
     }
     #
@@ -627,11 +627,11 @@ sub remove_dot_segments {
     #    prefix with "/" in the input buffer; otherwise,
     #
     elsif (index($input, '/./') == 0) {
-      substr($input, 0, 3, '/');
+      substr($input, 0, 3, '/')
       # $substep = 'B';
     }
     elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # Take care this can confuse the other test on '/../ or '/..'
-      substr($input, 0, 2, '/');
+      substr($input, 0, 2, '/')
       # $substep = 'B';
     }
     #
@@ -642,13 +642,13 @@ sub remove_dot_segments {
     #    buffer; otherwise,
     #
     elsif (index($input, '/../') == 0) {
-      substr($input, 0, 4, '/');
-      $output =~ s/\/?[^\/]*\z//;
+      substr($input, 0, 4, '/'),
+      $output =~ s/\/?[^\/]*\z//
       # $substep = 'C';
     }
     elsif ($input =~ /^\/\.\.(?:[^\/]|\z)/) {
-      substr($input, 0, 3, '/');
-      $output =~ s/\/?[^\/]*\z//;
+      substr($input, 0, 3, '/'),
+      $output =~ s/\/?[^\/]*\z//
       # $substep = 'C';
     }
     #
@@ -656,7 +656,7 @@ sub remove_dot_segments {
     #    that from the input buffer; otherwise,
     #
     elsif (($input eq '.') || ($input eq '..')) {
-      $input = '';
+      $input = ''
       # $substep = 'D';
     }
     #
@@ -668,8 +668,8 @@ sub remove_dot_segments {
     #    Note: "or the end of the input buffer" ?
     #
     else {
-      $input =~ /^\/?([^\/]*)/;                            # This will always match
-      $output .= substr($input, $-[0], $+[0] - $-[0], ''); # Note that perl has no problem saying length is zero
+      $input =~ /^\/?([^\/]*)/,                            # This will always match
+      $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem saying length is zero
       # $substep = 'E';
     }
     # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
@@ -678,7 +678,7 @@ sub remove_dot_segments {
   # 3. Finally, the output buffer is returned as the result of
   #    remove_dot_segments.
   #
-  return $output;
+  $output
 }
 
 sub unescape {
