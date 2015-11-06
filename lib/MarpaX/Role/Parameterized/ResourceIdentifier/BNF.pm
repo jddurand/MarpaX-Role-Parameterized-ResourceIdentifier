@@ -336,10 +336,7 @@ role {
                      #
                      # Store result
                      #
-                     foreach (0..$MAX) {
-                       $self->_structs->[$_]->output($value->[$_]);
-                       $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$self->output_by_indice($_)], [$self->_indice_description->[$_]])->Dump);
-                     }
+                     do { $self->_structs->[$_]->output($value->[$_]) } for (0..$MAX);
                      $self->_set_output($self->output_by_indice($self->indice_normalized));
                    }
                   );
