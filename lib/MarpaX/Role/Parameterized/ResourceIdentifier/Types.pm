@@ -67,7 +67,7 @@ use MooX::Struct -rw,
                      query         => [ isa => Str|Undef,     default => sub { undef } ],
                      segment       => [ isa => Str|Undef,     default => sub { undef } ],
                      authority     => [ isa => Str|Undef,     default => sub { undef } ],
-                     path          => [ isa => Str|Undef,     default => sub { undef } ],
+                     path          => [ isa => Str,           default => sub {    '' } ], # Never undef per construction
                      relative_ref  => [ isa => Str|Undef,     default => sub { undef } ],
                      relative_part => [ isa => Str|Undef,     default => sub { undef } ],
                      userinfo      => [ isa => Str|Undef,     default => sub { undef } ],
