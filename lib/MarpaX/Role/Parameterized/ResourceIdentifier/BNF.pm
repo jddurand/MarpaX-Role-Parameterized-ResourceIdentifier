@@ -630,7 +630,7 @@ sub remove_dot_segments {
       substr($input, 0, 3, '/')
       # $substep = 'B';
     }
-    elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # Take care this can confuse the other test on '/../ or '/..'
+    elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # (?:[\/]|\z) means this is a complete path segment
       substr($input, 0, 2, '/')
       # $substep = 'B';
     }
@@ -646,7 +646,7 @@ sub remove_dot_segments {
       $output =~ s/\/?[^\/]*\z//
       # $substep = 'C';
     }
-    elsif ($input =~ /^\/\.\.(?:[^\/]|\z)/) {
+    elsif ($input =~ /^\/\.\.(?:[\/]|\z)/) {          # (?:[\/]|\z) means this is a complete path segment
       substr($input, 0, 3, '/'),
       $output =~ s/\/?[^\/]*\z//
       # $substep = 'C';
@@ -668,8 +668,8 @@ sub remove_dot_segments {
     #    Note: "or the end of the input buffer" ?
     #
     else {
-      $input =~ /^\/?([^\/]*)/,                            # This will always match
-      $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem saying length is zero
+      $input =~ /^\/?([^\/]*)/,                           # This will always match
+      $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem when $+[0] == $-[0], it will simply do nothing
       # $substep = 'E';
     }
     # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
