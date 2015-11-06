@@ -16,6 +16,7 @@ use MooX::Role::Logger;
 use MooX::HandlesVia;
 use MooX::Role::Parameterized;
 use Role::Tiny;
+use Scalar::Util qw/blessed/;
 use Type::Params qw/compile/;
 use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
@@ -158,7 +159,7 @@ sub BUILDARGS {
   }
 
   my %args = ( input => $input );
-  $args{is_character_normalized} = $is_character_normalized if defined($is_character_normalized);
+  $args{is_character_normalized} = $is_character_normalized if ! Undef->check($is_character_normalized);
 
   \%args
 }
@@ -354,7 +355,7 @@ role {
                      # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
                      my $array_ref = $self->$args2array_sub($lhs, $field, @args);
                      # $self->_logger->tracef('%s:   %s[OUT] %s', $whoami, $field || $lhs || '', $array_ref);
-                     if (defined($field)) {
+                     if (! Undef->check($field)) {
                        #
                        # Segments is special
                        #
@@ -387,6 +388,97 @@ sub struct_by_type           { $_[0]->_structs->[$_[0]->indice($_[1])] }
 sub output_by_type           { $_[0]->struct_by_type($_[1])->output }
 sub struct_by_indice         { $_[0]->_structs->[$_[1]] }
 sub output_by_indice         { $_[0]->struct_by_indice($_[1])->output }
+sub abs {
+  my ($self, $base) = @_;
+  #
+  # Do nothing if $self is already absolute
+  #
+  my $self_struct = $self->_structs->[$self->indice_raw];
+  return $self if (! Undef->check($self_struct->scheme));
+  #
+  # https://tools.ietf.org/html/rfc3986
+  #
+  # 5.2.1.  Pre-parse the Base URI
+  #
+  # The base URI (Base) is ./.. parsed into the five main components described in
+  # Section 3.  Note that only the scheme component is required to be
+  # present in a base URI; the other components may be empty or
+  # undefined.  A component is undefined if its associated delimiter does
+  # not appear in the URI reference; the path component is never
+  # undefined, though it may be empty.
+  #
+  my $base_ri = blessed($self)->new($base);
+  my $base_struct = $base_ri->_structs->[$base_ri->indice_raw];
+  croak "$base is not absolute" unless ! Undef->check($base_struct->scheme);
+  my %Base = (
+              scheme    => $base_struct->scheme,
+              authority => $base_struct->authority,
+              path      => $base_struct->path,
+              query     => $base_struct->query,
+              fragment  => $base_struct->fragment
+             );
+  #
+  #   Normalization of the base URI, as described in Sections 6.2.2 and
+  # 6.2.3, is optional.  A URI reference must be transformed to its
+  # target URI before it can be normalized.
+  #
+  # 5.2.2.  Transform References
+  #
+  #
+  # -- The URI reference is parsed into the five URI components
+  #
+  croak "$self must do the generic syntax" unless Generic->check($self_struct);
+  #
+  # --
+  # (R.scheme, R.authority, R.path, R.query, R.fragment) = parse(R);
+  #
+  my %R = (
+           scheme    => $self_struct->scheme,
+           authority => $self_struct->authority,
+           path      => $self_struct->path,
+           query     => $self_struct->query,
+           fragment  => $self_struct->fragment
+          );
+  #
+  # -- A non-strict parser may ignore a scheme in the reference
+  # -- if it is identical to the base URI's scheme.
+  # --
+  # if ((! $strict) && ($R{scheme} eq $Base{scheme})) {
+  #   $R{scheme} = undef;
+  # }
+  my %T = ();
+  if (! Undef->check($R{scheme})) {
+    $T{scheme}    = $R{scheme};
+    $T{authority} = $R{authority};
+    $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+    $T{query}     = $R{query};
+  } else {
+    if (! Undef->check($R{authority})) {
+      $T{authority} = $R{authority};
+      $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+      $T{query}     = $R{query};
+    } else {
+      if (! length($R{path})) {
+        $T{path} = $Base{path};
+        $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query}
+      } else {
+        if (substr($R{path}, 0, 1) eq '/') {
+          $T{path} = __PACKAGE__->remove_dot_segments($R{path})
+        } else {
+          $T{path} = __PACKAGE__->_merge(\%Base, \%R);
+          $T{path} = __PACKAGE__->remove_dot_segments($T{path});
+        }
+        $T{query} = $R{query};
+      }
+      $T{authority} = $Base{authority};
+    }
+    $T{scheme} = $Base{scheme};
+  }
+
+  $T{fragment} = $R{fragment};
+
+  blessed($self)->new(__PACKAGE__->_recompose(\%T))
+}
 # =============================================================================
 # Class methods
 # =============================================================================
@@ -403,7 +495,7 @@ sub indice_normalized                  {         $indice_normalizer_end }
 sub indice {
   my ($class, $what) = @_;
 
-  croak "Invalid undef argument" if (! defined($what));
+  croak "Invalid undef argument" if (Undef->check($what));
 
   if    ($what eq 'RAW'                        ) { return                         RAW }
   elsif ($what eq 'URI_CONVERTED'              ) { return               URI_CONVERTED }
@@ -438,9 +530,64 @@ sub percent_encode {
   $encoded
 }
 
+sub _merge {
+  my ($class, $base, $ref) = @_;
+  #
+  # https://tools.ietf.org/html/rfc3986
+  #
+  # 5.2.3.  Merge Paths
+  #
+  # If the base URI has a defined authority component and an empty
+  # path, then return a string consisting of "/" concatenated with the
+  # reference's path; otherwise,
+  #
+  if (! Undef->check($base->{authority}) && ! length($base->{path})) {
+    return '/' . $ref->{path};
+  }
+  #
+  # return a string consisting of the reference's path component
+  # appended to all but the last segment of the base URI's path (i.e.,
+  # excluding any characters after the right-most "/" in the base URI
+  # path, or excluding the entire base URI path if it does not contain
+  # any "/" characters).
+  #
+  else {
+    my $base_path = $base->{path};
+    if ($base_path !~ /\//) {
+      $base_path = '';
+    } else {
+      $base_path =~ s/\/[^\/]*\z/\//;
+    }
+    return $base_path . $ref->{path};
+  }
+}
+
+sub _recompose {
+  my ($class, $T) = @_;
+  #
+  # https://tools.ietf.org/html/rfc3986
+  #
+  # 5.3.  Component Recomposition
+  #
+  # We are called only by abs(), so we are sure to have a hash reference in argument
+  #
+  #
+  my $result = '';
+  $result .=        $T->{scheme} . ':' if (! Undef->check($T->{scheme}));
+  $result .= '//' . $T->{authority}    if (! Undef->check($T->{authority}));
+  $result .=        $T->{path};
+  $result .= '?'  . $T->{query}        if (! Undef->check($T->{query}));
+  $result .= '#'  . $T->{fragment}     if (! Undef->check($T->{fragment}));
+
+  $result
+}
+
 sub remove_dot_segments {
   my ($class, $input) = @_;
-
+  #
+  # https://tools.ietf.org/html/rfc3986
+  #
+  # 5.2.4.  Remove Dot Segments
   #
   # 1.  The input buffer is initialized with the now-appended path
   # components and the output buffer is initialized to the empty
@@ -529,6 +676,7 @@ sub remove_dot_segments {
   #
   return $output;
 }
+
 sub unescape {
   my ($class, $value, $unreserved) = @_;
 
