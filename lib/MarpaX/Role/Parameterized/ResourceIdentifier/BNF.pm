@@ -386,7 +386,7 @@ role {
                          #
                          # Segments is special
                          #
-                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX)
+                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{segments}}, $array_ref->[$_]) for (0..$MAX)
                        } else {
                          $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for (0..$MAX)
                        }
@@ -831,7 +831,7 @@ INLINED_WITH_ACCESSORS
   # a ';' character, meaning a perl op. Though take care, we do not
   # want to alter the \$_ of our caller -;
   #
-  local \$_ = \$_[0]->$name,
+  local \$_ = \$_[0]->{$name},
   exists(\$_->{\$criteria}) ? goto \$_->{\$criteria} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
       push(@array,eval "sub {$inlined_without_accessors}");
