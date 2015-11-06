@@ -407,9 +407,14 @@ sub abs {
   # not appear in the URI reference; the path component is never
   # undefined, though it may be empty.
   #
-  my $base_ri = blessed($self)->new($base);
+  my $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : blessed($self)->new($base);
   my $base_struct = $base_ri->_structs->[$base_ri->indice_raw];
-  croak "$base is not absolute" unless ! Undef->check($base_struct->scheme);
+  #
+  # This work only if $base is absolute and ($self, $base) support the generic syntax
+  #
+  croak "$base is not absolute"            unless ! Undef->check($base_struct->scheme);
+  croak "$self must do the generic syntax" unless Generic->check($self_struct);
+  croak "$base must do the generic syntax" unless Generic->check($base_struct);
   my %Base = (
               scheme    => $base_struct->scheme,
               authority => $base_struct->authority,
@@ -427,7 +432,6 @@ sub abs {
   #
   # -- The URI reference is parsed into the five URI components
   #
-  croak "$self must do the generic syntax" unless Generic->check($self_struct);
   #
   # --
   # (R.scheme, R.authority, R.path, R.query, R.fragment) = parse(R);
