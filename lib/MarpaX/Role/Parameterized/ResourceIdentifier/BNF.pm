@@ -110,7 +110,8 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
                                                 octets                  => Optional[Bytes],
                                                 encoding                => Optional[Str],
                                                 decode_strategy         => Optional[Any],
-                                                is_character_normalized => Optional[Bool]
+                                                is_character_normalized => Optional[Bool],
+                                                reg_name_is_domain_name => Optional[Bool]
                                                ]);
 sub BUILDARGS {
   my ($class, $arg) = @_;
@@ -311,8 +312,8 @@ role {
                      # For performance reason, cache all $self-> accesses
                      #
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0..$MAX];
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->_normalizer_wrapper;
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->_converter_wrapper;
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
                      #
                      # A very special case is the input itself, before the parsing
                      # We want to apply eventual normalizers and converters on it.
@@ -793,12 +794,13 @@ sub _generate_attributes {
   push(@_type_names, @_);
   push(@_type_names, undef) for ($indice_end + 1..$MAX);
   has $_type_names   => (is => 'ro', isa => ArrayRef[Str|Undef], default => sub { \@_type_names });
-  has $_type_wrapper => (is => 'ro', isa => ArrayRef[CodeRef|Undef], lazy => 1,
+  has $_type_wrapper => (is => 'ro', isa => ArrayRef[CodeRef|Undef],
+                         # lazy => 1,                              Not lazy and this is INTENTIONAL
                          handles_via => 'Array',
                          handles => {
                                      "_get_$type" => 'get'
                                     },
-                         builder => sub {
+                         default => sub {
                            $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names)
                          }
                         );
