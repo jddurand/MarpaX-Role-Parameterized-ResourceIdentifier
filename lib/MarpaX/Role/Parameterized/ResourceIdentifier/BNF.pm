@@ -265,7 +265,7 @@ role {
   #
   my %MAPPING = %{$mapping};
   my $args2array_sub = sub {
-    my ($self, $lhs, $field, @args) = @_;
+    my ($self, $criteria, @args) = @_;
     my $rc = [ ('') x _COUNT ];
     #
     # Concatenate
@@ -277,11 +277,11 @@ role {
     # Normalize
     #
     my $current = $rc->[$indice_normalizer_start];
-    do { $rc->[$_] = $current = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $field, $current, $lhs) } for ($indice_normalizer_start..$indice_normalizer_end);
+    do { $rc->[$_] = $current = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $current) } for ($indice_normalizer_start..$indice_normalizer_end);
     #
     # Convert
     #
-    do { $rc->[$_] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, $field, $rc->[$_], $lhs) } for ($indice_converter_start..$indice_converter_end);
+    do { $rc->[$_] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, $criteria, $rc->[$_]) } for ($indice_converter_start..$indice_converter_end);
 
     $rc
   };
@@ -382,7 +382,8 @@ role {
                      # $self->_logger->tracef('%s: %s ::= %s', $whoami, $lhs, join(' ', @rhs));
                      my $field = $mapping->{$lhs};
                      # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
-                     my $array_ref = $self->$args2array_sub($lhs, $field, @args);
+                     my $criteria = $field || $lhs;
+                     my $array_ref = $self->$args2array_sub($criteria, @args);
                      # $self->_logger->tracef('%s:   %s[OUT] %s', $whoami, $field || $lhs || '', $array_ref);
                      #
                      # In the action, for a performance issue, I use defined() instead of ! Undef->check()
@@ -821,18 +822,16 @@ sub _build_impl_sub {
       # for the outside world.
       # The inlined version using these accessors is:
       my $inlined_with_accessors = <<INLINED_WITH_ACCESSORS;
-  # my (\$self, \$field, \$value, \$lhs) = \@_;
-  my \$criteria = \$_[1] || \$_[3] || '';
+  # my (\$self, \$criteria, \$value) = \@_;
   #
   # At run-time, in particular Protocol-based normalizers,
   # the callbacks can be altered
   #
-  \$_[0]->$exists(\$criteria) ? goto \$_[0]->$getter(\$criteria) : \$_[2]
+  \$_[0]->$exists(\$_[1]) ? goto \$_[0]->$getter(\$_[1]) : \$_[2]
 INLINED_WITH_ACCESSORS
       # The inlined version using direct perl op is:
       my $inlined_without_accessors = <<INLINED_WITHOUT_ACCESSORS;
-  # my (\$self, \$field, \$value, \$lhs) = \@_;
-  my \$criteria = \$_[1] || \$_[3] || '';
+  # my (\$self, \$criteria, \$value) = \@_;
   #
   # At run-time, in particular Protocol-based normalizers,
   # the callbacks can be altered
@@ -841,8 +840,8 @@ INLINED_WITH_ACCESSORS
   # a ';' character, meaning a perl op. Though take care, we do not
   # want to alter the \$_ of our caller -;
   #
-  local \$_ = \$_[0]->{$name},
-  exists(\$_->{\$criteria}) ? goto \$_->{\$criteria} : \$_[2]
+  # local \$_ = \$_[0]->{$name},
+  exists(\$_[0]->{$name}->{\$_[1]}) ? goto \$_[0]->{$name}->{\$_[1]} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
       push(@array,eval "sub {$inlined_without_accessors}");
     }
