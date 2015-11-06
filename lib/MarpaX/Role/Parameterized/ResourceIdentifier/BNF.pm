@@ -188,6 +188,11 @@ our $check_params = compile(
 # =============================================================================
 # Parameterized role
 # =============================================================================
+#
+# For Marpa optimisation
+#
+my %registrations = ();
+
 role {
   my $params = shift;
   #
@@ -289,6 +294,10 @@ role {
                            ranking_method    => 'high_rule_only',
                            grammar           => $grammar
                           );
+  #
+  # Marpa optimisation: we cache the registrations. At every recognizer's value() call
+  # the actions are checked. But this is static information in our case
+  #
   install_modifier($whoami, 'fresh', '_parse',
                    sub {
                      my ($self) = @_;
@@ -330,7 +339,17 @@ role {
                      #
                      # Check result
                      #
+                     # Marpa optimisation: we cache the registrations. At every recognizer's value() call
+                     # the actions are checked. But this is static information in our case
+                     #
+                     my $registrations = $registrations{$whoami};
+                     if (defined($registrations)) {
+                       $r->registrations($registrations);
+                     }
                      my $value_ref = $r->value($self);
+                     if (! defined($registrations)) {
+                       $registrations{$whoami} = $r->registrations();
+                     }
                      croak "[$type] No parse tree value" unless Ref->check($value_ref);
                      my $value = ${$value_ref};
                      croak "[$type] Invalid parse tree value" unless ArrayRef->check($value);
@@ -355,14 +374,21 @@ role {
                      # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
                      my $array_ref = $self->$args2array_sub($lhs, $field, @args);
                      # $self->_logger->tracef('%s:   %s[OUT] %s', $whoami, $field || $lhs || '', $array_ref);
-                     if (! Undef->check($field)) {
+                     #
+                     # In the action, for a performance issue, I use defined() instead of ! Undef->check()
+                     #
+                     if (defined $field) {
                        #
-                       # Segments is special
+                       # For performance reason, because we KNOW to what we are talking about
+                       # we use explicit push() and set instead of the accessors
                        #
                        if ($field eq 'segments') {
-                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX);
+                         #
+                         # Segments is special
+                         #
+                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->segments}, $array_ref->[$_]) for (0..$MAX)
                        } else {
-                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->$field($array_ref->[$_]) for (0..$MAX);
+                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for (0..$MAX)
                        }
                      }
                      $array_ref
@@ -779,7 +805,12 @@ sub _build_impl_sub {
       my $name = $self->$names->[$_];
       my $exists = "exists_$name";
       my $getter = "get_$name";
-      my $inlined = <<INLINED;
+      #
+      # We KNOW in advance that we are talking with a hash. So no need to
+      # to do extra calls. The $exists and $getter variables are intended
+      # for the outside world.
+      # The inlined version using these accessors is:
+      my $inlined_with_accessors = <<INLINED_WITH_ACCESSORS;
   # my (\$self, \$field, \$value, \$lhs) = \@_;
   my \$criteria = \$_[1] || \$_[3] || '';
   #
@@ -787,11 +818,84 @@ sub _build_impl_sub {
   # the callbacks can be altered
   #
   \$_[0]->$exists(\$criteria) ? goto \$_[0]->$getter(\$criteria) : \$_[2]
-INLINED
-      push(@array,eval "sub {$inlined}");
+INLINED_WITH_ACCESSORS
+      # The inlined version using direct perl op is:
+      my $inlined_without_accessors = <<INLINED_WITHOUT_ACCESSORS;
+  # my (\$self, \$field, \$value, \$lhs) = \@_;
+  my \$criteria = \$_[1] || \$_[3] || '';
+  #
+  # At run-time, in particular Protocol-based normalizers,
+  # the callbacks can be altered
+  # We use already existing variable \$_ to avoid having to create
+  # another one: saying my \$hash = \$_[0]->$name would require
+  # a ';' character, meaning a perl op. Though take care, we do not
+  # want to alter the \$_ of our caller -;
+  #
+  local \$_ = \$_[0]->$name,
+  exists(\$_->{\$criteria}) ? goto \$_->{\$criteria} : \$_[2]
+INLINED_WITHOUT_ACCESSORS
+      push(@array,eval "sub {$inlined_without_accessors}");
     }
   }
   \@array
+}
+
+BEGIN {
+  #
+  # Marpa internal optimisation: we do not want the closures to be rechecked every time
+  # we call $r->value(). This is a static information, although determined at run-time
+  # the first time $r->value() is called on a recognizer.
+  #
+  no warnings 'redefine';
+
+  sub Marpa::R2::Recognizer::registrations {
+    my $recce = shift;
+    if (@_) {
+      my $hash = shift;
+      if (! defined($hash) ||
+          ref($hash) ne 'HASH' ||
+          grep {! exists($hash->{$_})} qw/
+                                           NULL_VALUES
+                                           REGISTRATIONS
+                                           CLOSURE_BY_SYMBOL_ID
+                                           CLOSURE_BY_RULE_ID
+                                           RESOLVE_PACKAGE
+                                           RESOLVE_PACKAGE_SOURCE
+                                           PER_PARSE_CONSTRUCTOR
+                                         /) {
+        Marpa::R2::exception(
+                             "Attempt to reuse registrations failed:\n",
+                             "  Registration data is not a hash containing all necessary keys:\n",
+                             "  Got : " . ((ref($hash) eq 'HASH') ? join(', ', sort keys %{$hash}) : '') . "\n",
+                             "  Want: CLOSURE_BY_RULE_ID, CLOSURE_BY_SYMBOL_ID, NULL_VALUES, PER_PARSE_CONSTRUCTOR, REGISTRATIONS, RESOLVE_PACKAGE, RESOLVE_PACKAGE_SOURCE\n"
+                            );
+      }
+      $recce->[Marpa::R2::Internal::Recognizer::NULL_VALUES] = $hash->{NULL_VALUES};
+      $recce->[Marpa::R2::Internal::Recognizer::REGISTRATIONS] = $hash->{REGISTRATIONS};
+      $recce->[Marpa::R2::Internal::Recognizer::CLOSURE_BY_SYMBOL_ID] = $hash->{CLOSURE_BY_SYMBOL_ID};
+      $recce->[Marpa::R2::Internal::Recognizer::CLOSURE_BY_RULE_ID] = $hash->{CLOSURE_BY_RULE_ID};
+      $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE] = $hash->{RESOLVE_PACKAGE};
+      $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE_SOURCE] = $hash->{RESOLVE_PACKAGE_SOURCE};
+      $recce->[Marpa::R2::Internal::Recognizer::PER_PARSE_CONSTRUCTOR] = $hash->{PER_PARSE_CONSTRUCTOR};
+    }
+    return {
+            NULL_VALUES            => $recce->[Marpa::R2::Internal::Recognizer::NULL_VALUES],
+            REGISTRATIONS          => $recce->[Marpa::R2::Internal::Recognizer::REGISTRATIONS],
+            CLOSURE_BY_SYMBOL_ID   => $recce->[Marpa::R2::Internal::Recognizer::CLOSURE_BY_SYMBOL_ID],
+            CLOSURE_BY_RULE_ID     => $recce->[Marpa::R2::Internal::Recognizer::CLOSURE_BY_RULE_ID],
+            RESOLVE_PACKAGE        => $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE],
+            RESOLVE_PACKAGE_SOURCE => $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE_SOURCE],
+            PER_PARSE_CONSTRUCTOR  => $recce->[Marpa::R2::Internal::Recognizer::PER_PARSE_CONSTRUCTOR]
+           };
+  } ## end sub registrations
+
+  sub Marpa::R2::Scanless::R::registrations {
+    my $slr = shift;
+    my $thick_g1_recce =
+      $slr->[Marpa::R2::Internal::Scanless::R::THICK_G1_RECCE];
+    return $thick_g1_recce->registrations(@_);
+  } ## end sub Marpa::R2::Scanless::R::registrations
+
 }
 
 1;
