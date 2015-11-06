@@ -835,15 +835,10 @@ INLINED_WITH_ACCESSORS
   #
   # At run-time, in particular Protocol-based normalizers,
   # the callbacks can be altered
-  # We use already existing variable \$_ to avoid having to create
-  # another one: saying my \$hash = \$_[0]->$name would require
-  # a ';' character, meaning a perl op. Though take care, we do not
-  # want to alter the \$_ of our caller -;
   #
-  # local \$_ = \$_[0]->{$name},
   exists(\$_[0]->{$name}->{\$_[1]}) ? goto \$_[0]->{$name}->{\$_[1]} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
-      push(@array,eval "sub {$inlined_without_accessors}");
+      push(@array,eval "sub {$inlined_without_accessors}")
     }
   }
   \@array
