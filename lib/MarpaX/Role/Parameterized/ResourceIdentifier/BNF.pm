@@ -852,10 +852,9 @@ sub _build_impl_sub {
       my $inlined_with_accessors = <<INLINED_WITH_ACCESSORS;
   # my (\$self, \$criteria, \$value) = \@_;
   #
-  # At run-time, in particular Protocol-based normalizers,
-  # the callbacks can be altered
+  # This is intentionnaly doing NOTHING, but call the builders -;
   #
-  \$_[0]->$exists(\$_[1]) ? goto \$_[0]->$getter(\$_[1]) : \$_[2]
+  \$_[0]->$exists(\$_[1])
 INLINED_WITH_ACCESSORS
       # The inlined version using direct perl op is:
       my $inlined_without_accessors = <<INLINED_WITHOUT_ACCESSORS;
