@@ -13,6 +13,7 @@ use Encode qw/encode/;
 use MarpaX::RFC::RFC3629;
 use Moo::Role;
 use MooX::Role::Logger;
+use Net::IDN::Encode qw/domain_to_ascii/;
 use Try::Tiny;
 #
 # Arguments of every callback:

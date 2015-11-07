@@ -121,30 +121,31 @@ sub BUILDARGS {
   my $input;
   my $is_character_normalized;
 
+  my %args = ();
+
   if (StringLike->check($first_arg)) {
-    $input = "$first_arg";
+    $args{input} = "$first_arg";                        # Eventual stringification
   } else {
-    my ($params)    = $check_BUILDARGS_Dict->(%{$arg});
+    my ($params) = $check_BUILDARGS_Dict->(%{$first_arg});
+    %args = %{$params};
 
     croak 'Please specify either input or octets'                if (! exists($params->{input})  && ! exists($params->{octets}));
     croak 'Please specify only one of input or octets, not both' if (  exists($params->{input})  &&   exists($params->{octets}));
     croak 'Please specify encoding'                              if (  exists($params->{octets}) && ! exists($params->{encoding}));
     if (exists($params->{input})) {
-      $input = "$params->{input}";
+      $args{input} = "$params->{input}";               # Eventual stringification
     } else {
       my $octets          = $params->{octets};
       my $encoding        = $params->{encoding};
       my $decode_strategy = $params->{decode_strategy} // Encode::FB_CROAK;
-      if (exists($params->{is_character_normalized})) {
-        $is_character_normalized = $params->{is_character_normalized};
-      } else {
+      if (! exists($params->{is_character_normalized})) {
         my $enc_mime_name = find_encoding($encoding)->mime_name;
-        $is_character_normalized = grep { $enc_mime_name eq $_ } @ucs_mime_name;
+        $args{is_character_normalized} = grep { $enc_mime_name eq $_ } @ucs_mime_name;
       }
       #
       # Encode::encode will croak by itself if decode_strategy is not ok
       #
-      $input = decode($encoding, $octets, $decode_strategy);
+      $args{input} = decode($encoding, $octets, $decode_strategy);
     }
   }
 
@@ -153,14 +154,11 @@ sub BUILDARGS {
     # Copy from URI:
     # Get rid of potential wrapping
     #
-    $input =~ s/^<(?:URL:)?(.*)>$/$1/;
-    $input =~ s/^"(.*)"$/$1/;
-    $input =~ s/^\s+//;
-    $input =~ s/\s+$//;
+    $args{input} =~ s/^<(?:URL:)?(.*)>$/$1/;
+    $args{input} =~ s/^"(.*)"$/$1/;
+    $args{input} =~ s/^\s+//;
+    $args{input} =~ s/\s+$//;
   }
-
-  my %args = ( input => $input );
-  $args{is_character_normalized} = $is_character_normalized if ! Undef->check($is_character_normalized);
 
   \%args
 }
