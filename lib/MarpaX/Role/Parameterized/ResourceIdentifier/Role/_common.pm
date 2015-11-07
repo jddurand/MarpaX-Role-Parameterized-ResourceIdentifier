@@ -28,7 +28,7 @@ around build_character_normalizer => sub {
   # NFC or a normalizing transcoder using NFC MUST be used for
   # interoperability.
   #
-  $rc->{''} = sub { normalize('C',  $_[2]) } if (! $self->is_character_normalized);
+  $rc->{''} = sub { normalize('NFC',  $_[2]) } if (! $self->is_character_normalized);
   $rc
 };
 

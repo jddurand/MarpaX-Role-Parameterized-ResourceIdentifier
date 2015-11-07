@@ -12,16 +12,16 @@ use Types::Standard -all;
 
 # AUTHORITY
 
-our $MARPA_TRACE_TERMINALS = ($ENV{'MarpaX__ResourceIdentifier__MARPA_TRACE_TERMINALS'} // 0) ? 1 : 0;
-our $MARPA_TRACE_VALUES    = ($ENV{'MarpaX__ResourceIdentifier__MARPA_TRACE_VALUES'}    // 0) ? 1 : 0;
-our $MARPA_TRACE           = $MARPA_TRACE_TERMINALS || $MARPA_TRACE_VALUES;
-our $WITH_LOGGER           = (($ENV{'MarpaX__ResourceIdentifier__WITH_LOGGER'}          // 0) || $MARPA_TRACE) ? 1 : 0;
-our $URI_COMPAT            = ($ENV{'MarpaX__ResourceIdentifier__URI_COMPAT'}            // 1);
+our $MARPA_TRACE_TERMINALS = ($ENV{'MarpaX_RI_MARPA_TRACE_TERMINALS'} // 0) ? 1 : 0;
+our $MARPA_TRACE_VALUES    = ($ENV{'MarpaX_RI_MARPA_TRACE_VALUES'}    // 0) ? 1 : 0;
+our $URI_COMPAT            = ($ENV{'MarpaX_RI_URI_COMPAT'}            // 1);
+our $PLUGINS_DIRNAME       = ($ENV{'MarpaX_RI_PLUGINS_DIRNAME'}       // 'Plugins');
+our $CAN_SCHEME_METHODNAME = ($ENV{'MarpaX_RI_CAN_SCHEME_METHODNAME'} // 'can_scheme');
 
 has marpa_trace_terminals => ( is => 'ro', isa => Bool, default => sub { $MARPA_TRACE_TERMINALS } );
 has marpa_trace_values    => ( is => 'ro', isa => Bool, default => sub { $MARPA_TRACE_VALUES    } );
-has marpa_trace           => ( is => 'ro', isa => Bool, default => sub { $MARPA_TRACE           } );
-has with_logger           => ( is => 'ro', isa => Bool, default => sub { $WITH_LOGGER           } );
 has uri_compat            => ( is => 'ro', isa => Bool, default => sub { $URI_COMPAT            } );
+has plugins_dirname       => ( is => 'ro', isa => Str,  default => sub { $PLUGINS_DIRNAME       } );
+has can_scheme_methodname => ( is => 'ro', isa => Str,  default => sub { $CAN_SCHEME_METHODNAME } );
 
 1;

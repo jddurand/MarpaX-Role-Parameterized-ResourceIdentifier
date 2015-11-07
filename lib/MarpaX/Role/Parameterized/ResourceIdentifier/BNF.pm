@@ -22,96 +22,133 @@ use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
 use Types::TypeTiny qw/StringLike/;
 use Try::Tiny;
+
+# -------------------------------------------
+# The three structures we maintain internally
+# -------------------------------------------
 use constant {
-  RAW                         =>  0, # Concat: yes, Normalize: no,  Convert: no
-  URI_CONVERTED               =>  1, # Concat: yes, Normalize: no,  Convert: yes
-  IRI_CONVERTED               =>  2, # Concat: yes, Normalize: no,  Convert: yes
-  CASE_NORMALIZED             =>  3, # Concat: yes, Normalize: yes, Convert: no
-  CHARACTER_NORMALIZED        =>  4, # Concat: yes, Normalize: yes, Convert: no
-  PERCENT_ENCODING_NORMALIZED =>  5, # Concat: yes, Normalize: yes, Convert: no
-  PATH_SEGMENT_NORMALIZED     =>  6, # Concat: yes, Normalize: yes, Convert: no
-  SCHEME_BASED_NORMALIZED     =>  7, # Concat: yes, Normalize: yes, Convert: no
-  PROTOCOL_BASED_NORMALIZED   =>  8, # Concat: yes, Normalize: yes, Convert: no
-  _COUNT                      =>  9
+  RAW                         =>  0,
+  NORMALIZED                  =>  1,
+  CONVERTED                   =>  2
 };
-use overload (
-              '""'     => sub { $_[0]->input },
-              '=='     => sub { $_[0]->output_by_indice($_[0]->indice_normalized) eq $_[1]->output_by_indice($_[1]->indice_normalized) },
-              '!='     => sub { $_[0]->output_by_indice($_[0]->indice_normalized) ne $_[1]->output_by_indice($_[1]->indice_normalized) },
-              fallback => 1,
-             );
 
+# ------------------------
+# The normalization ladder
+# ------------------------
+use constant {
+  CASE_NORMALIZED             =>  0,
+  CHARACTER_NORMALIZED        =>  1,
+  PERCENT_ENCODING_NORMALIZED =>  2,
+  PATH_SEGMENT_NORMALIZED     =>  3,
+  SCHEME_BASED_NORMALIZED     =>  4,
+  PROTOCOL_BASED_NORMALIZED   =>  5,
 
-our $MAX                         = _COUNT - 1;
-our $indice_concatenate_start    = RAW;
-our $indice_concatenate_end      = PROTOCOL_BASED_NORMALIZED;
-our $indice_normalizer_start     = CASE_NORMALIZED;
-our $indice_normalizer_end       = PROTOCOL_BASED_NORMALIZED;
-our $indice_converter_start      = URI_CONVERTED;
-our $indice_converter_end        = IRI_CONVERTED;
+  _MAX_NORMALIZER             =>  5,
+  _COUNT_NORMALIZER           =>  6
+};
 our @normalizer_names = qw/case_normalizer
                            character_normalizer
                            percent_encoding_normalizer
                            path_segment_normalizer
                            scheme_based_normalizer
                            protocol_based_normalizer/;
-our @converter_names = qw/uri_converter
-                          iri_converter/;
+
+# ---------------------------------------------------
+# The convertion ladder, currently there is only one
+# and it is IRI->URI or URI->IRI depending on the
+# "spec" attribute when doing the parameterized role
+# ---------------------------------------------------
+use constant {
+  URI_CONVERTED              =>  0,
+  IRI_CONVERTED              =>  1,
+
+  _MAX_CONVERTER             =>  1,
+  _COUNT_CONVERTER           =>  2
+};
+#
+# Depending on the "spec" attribute we will call one
+# converter only. If spec is "uri" we call conversion to iri.
+# If spec is "iri" we call conversion to uri. Though there
+# remains two possible converters:
+#
+our @converter_names = qw/uri_converter iri_converter/;
+
+# -----
+# Other
+# -----
 our @ucs_mime_name = map { find_encoding($_)->mime_name } qw/UTF-8 UTF-16 UTF-16BE UTF-16LE UTF-32 UTF-32BE UTF-32LE/;
+
 # ------------------------------------------------------------
-# Explicit slots for all supported attributes in input, scheme
-# is explicitely ignored, it is handled only by _top
+# Explicit slots for all supported attributes in input
+# scheme is explicitely ignored, it is handled only by _top
 # ------------------------------------------------------------
 has input                   => ( is => 'rwp', isa => StringLike                            );
-has has_recognized_scheme   => ( is => 'ro',  isa => Bool,        default => sub {   !!0 } );
+has has_recognized_scheme   => ( is => 'rw',  isa => Bool,        default => sub {   !!0 } );
 has is_character_normalized => ( is => 'rwp', isa => Bool,        default => sub {   !!1 } );
-# ----------------------------------------------------------------------------
-# Slots that implementations should 'around' on the builders for customization
-# ----------------------------------------------------------------------------
-has pct_encoded             => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
-has reserved                => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
-has unreserved              => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
-has default_port            => ( is => 'ro',  isa => Int|Undef,   lazy => 1, builder => 'build_default_port' );
-has reg_name_is_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_is_domain_name' );
-__PACKAGE__->_generate_attributes('normalizer', $indice_normalizer_start, $indice_normalizer_end, @normalizer_names);
-__PACKAGE__->_generate_attributes('converter', $indice_converter_start, $indice_converter_end, @converter_names);
-# ----------------------------------------------------------------------------
-# Parsing result: this is the output after latest of the normalization steps
-# ----------------------------------------------------------------------------
-has output                  => ( is => 'rwp', isa => Str                                 );
+#
+# Implementations should 'around' the folllowings
+#
+has pct_encoded                     => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
+has reserved                        => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
+has unreserved                      => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
+has default_port                    => ( is => 'ro',  isa => Int|Undef,   lazy => 1, builder => 'build_default_port' );
+has reg_name_convert_as_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_convert_as_domain_name' );
+__PACKAGE__->_generate_attributes('normalizer', @normalizer_names);
+__PACKAGE__->_generate_attributes('converter',  @converter_names);
 
-# --------------
-# Internal slots
-# --------------
+# ------------------------------------------------------------------------------------------------
+# Internal slots: one for the raw parse, one for the normalized value, one for the converted value
+# ------------------------------------------------------------------------------------------------
 has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
+use constant {
+  _RAW_STRUCT               =>  0,
+  _NORMALIZED_STRUCT        =>  1,
+  _CONVERTED_STRUCT         =>  2,
+
+  _MAX_STRUCTS              =>  2,
+  _COUNT_STRUCTS            =>  3
+};
+#
+# Just a helper for me
+#
 has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => sub {
                                    [
-                                    'Raw value                        ',
-                                    'URI converted value              ',
-                                    'IRI converted value              ',
-                                    'Case normalized value            ',
-                                    'Character normalized value       ',
-                                    'Percent encoding normalized value',
-                                    'Path segment normalized value    ',
-                                    'Scheme based normalized value    ',
-                                    'Protocol based normalized value  '
+                                    'Raw structure       ',
+                                    'Normalized structure',
+                                    'Converted structure '
                                    ]
                                  }
                                );
+#
+# Internally I use hash notation for performance
+#
+sub raw        { $_[0]->{_structs}->[0]->{$_[1] // 'output'} }
+sub normalized { $_[0]->{_structs}->[1]->{$_[1] // 'output'} }
+sub converted  { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
 
-# =============================================================================
-# We want parsing to happen immeidately AFTER object was build and then at
+# -------------
+# The overloads
+# -------------
+use overload (
+              '""'     => sub { $_[0]->raw },
+              '=='     => sub { $_[0]->normalized eq $_[1]->normalized },
+              '!='     => sub { $_[0]->normalized ne $_[1]->normalized },
+              fallback => 1,
+             );
+
+# =======================================================================
+# We want parsing to happen immedately AFTER object was build and then at
 # every input reconstruction
-# =============================================================================
+# =======================================================================
 our $setup                = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
 our $check_BUILDARGS      = compile(StringLike|HashRef);
 our $check_BUILDARGS_Dict = compile(slurpy Dict[
-                                                input                   => Optional[StringLike],
-                                                octets                  => Optional[Bytes],
-                                                encoding                => Optional[Str],
-                                                decode_strategy         => Optional[Any],
-                                                is_character_normalized => Optional[Bool],
-                                                reg_name_is_domain_name => Optional[Bool]
+                                                input                           => Optional[StringLike],
+                                                octets                          => Optional[Bytes],
+                                                encoding                        => Optional[Str],
+                                                decode_strategy                 => Optional[Any],
+                                                is_character_normalized         => Optional[Bool],
+                                                reg_name_convert_as_domain_name => Optional[Bool]
                                                ]);
 sub BUILDARGS {
   my ($class, $arg) = @_;
@@ -170,15 +207,16 @@ sub BUILD {
   # the parser is optimized by using explicit hash access to
   # $self
   #
-  # Normalizers
+  # Normalize
   #
   my $normalizer_wrapper_with_accessors = $self->_normalizer_wrapper_with_accessors;
-  do { $normalizer_wrapper_with_accessors->[$_]->($self, '', '', '') } for ($indice_normalizer_start..$indice_normalizer_end);
+  do { $normalizer_wrapper_with_accessors->[$_]->($self, '', '') } for 0.._MAX_NORMALIZER;
   #
-  # Converters
+  # Convert
   #
   my $converter_wrapper_with_accessors = $self->_converter_wrapper_with_accessors;
-  do { $converter_wrapper_with_accessors->[$_]->($self, '', '', '') }  for ($indice_converter_start..$indice_converter_end);
+  my $_converter_indice = $self->_converter_indice;
+  $converter_wrapper_with_accessors->[$_converter_indice]->($self, '', '');
   #
   # Parse the input
   #
@@ -196,6 +234,7 @@ our $check_params = compile(
                             Dict[
                                  whoami      => Str,
                                  type        => Enum[qw/common generic/],
+                                 spec        => Enum[qw/uri iri/],
                                  bnf         => Str,
                                  reserved    => RegexpRef,
                                  unreserved  => RegexpRef,
@@ -224,6 +263,7 @@ role {
 
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
+  my $spec        = $PARAMS->{spec};
   my $bnf         = $PARAMS->{bnf};
   my $mapping     = $PARAMS->{mapping};
 
@@ -264,7 +304,6 @@ role {
   # -----
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;
   my $marpa_trace_values    = $setup->marpa_trace_values;
-  my $marpa_trace           = $setup->marpa_trace;
 
   # -------
   # Logging
@@ -277,6 +316,7 @@ role {
   local $MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace::bnf_package = $whoami;
   tie ${$trace_file_handle}, 'MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace';
 
+  my $converter_indice = $spec eq 'uri' ? IRI_CONVERTED : URI_CONVERTED;
   # ---------------------------------------------------------------------
   # This stub will be the one doing the real work, called by Marpa action
   # ---------------------------------------------------------------------
@@ -284,24 +324,26 @@ role {
   my %MAPPING = %{$mapping};
   my $args2array_sub = sub {
     my ($self, $criteria, @args) = @_;
-    my $rc = [ ('') x _COUNT ];
+    #
+    # There are as many strings in output as there are structures
+    #
+    my @rc = (('') x _COUNT_STRUCTS);
     #
     # Concatenate
     #
-    foreach my $irc ($indice_concatenate_start..$indice_concatenate_end) {
-      do { $rc->[$irc] .= ref($args[$_]) ? $args[$_]->[$irc] : $args[$_] } for (0..$#args)
+    foreach my $istruct (0.._MAX_STRUCTS) {
+      do { $rc[$istruct] .= ref($args[$_]) ? $args[$_]->[$istruct] : $args[$_] } for (0..$#args)
     }
     #
     # Normalize
     #
-    my $current = $rc->[$indice_normalizer_start];
-    do { $rc->[$_] = $current = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $current) } for ($indice_normalizer_start..$indice_normalizer_end);
+    do { $rc[_NORMALIZED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $rc[_NORMALIZED_STRUCT]) } for 0.._MAX_NORMALIZER;
     #
     # Convert
     #
-    do { $rc->[$_] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, $criteria, $rc->[$_]) } for ($indice_converter_start..$indice_converter_end);
+    $rc[_CONVERTED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, $criteria, $rc[_CONVERTED_STRUCT]);
 
-    $rc
+    \@rc
   };
   #
   # Parse method installed directly in the BNF package
@@ -328,9 +370,9 @@ role {
                      #
                      # For performance reason, cache all $self-> accesses
                      #
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0..$MAX];
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
                      #
                      # A very special case is the input itself, before the parsing
                      # We want to apply eventual normalizers and converters on it.
@@ -338,13 +380,13 @@ role {
                      # empty string, i.e. a situation that can never happen during
                      # parsing
                      #
-                     # The normalization ladder
+                     # Normalize
                      #
-                     do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
+                     do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input) } for 0.._MAX_NORMALIZER;
                      #
-                     # The converters. Every entry is independant.
+                     # Convert
                      #
-                     do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
+                     $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, '', $input);
                      #
                      # Parse (may croak)
                      #
@@ -364,17 +406,8 @@ role {
                      if (! defined($registrations)) {
                        $registrations{$whoami} = $r->registrations();
                      }
-                     # croak "[$type] No parse tree value" unless Ref->check($value_ref);
-                     #
-                     # This will croak natively if this is not a reference
-                     #
                      my $value = ${$value_ref};
-                     # croak "[$type] Invalid parse tree value" unless ArrayRef->check($value);
-                     #
-                     # Store result
-                     #
-                     do { $self->{_structs}->[$_]->{output} = $value->[$_] } for (0..$MAX);
-                     $self->{output} = $self->{_structs}->[$indice_normalizer_end]->{output}
+                     do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0.._MAX_STRUCTS;
                    }
                   );
   #
@@ -393,15 +426,9 @@ role {
                                                \@rules
                                              }
                                            };
-                     # $self->_logger->tracef('%s: %s ::= %s', $whoami, $lhs, join(' ', @rhs));
                      my $field = $mapping->{$lhs};
-                     # $self->_logger->tracef('%s:   %s[IN] %s', $whoami, $field || $lhs || '', \@args);
                      my $criteria = $field || $lhs;
                      my $array_ref = $self->$args2array_sub($criteria, @args);
-                     # $self->_logger->tracef('%s:   %s[OUT] %s', $whoami, $field || $lhs || '', $array_ref);
-                     #
-                     # In the action, for a performance issue, I use defined() instead of ! Undef->check()
-                     #
                      if (defined $field) {
                        #
                        # For performance reason, because we KNOW to what we are talking about
@@ -411,14 +438,19 @@ role {
                          #
                          # Segments is special
                          #
-                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{segments}}, $array_ref->[$_]) for (0..$MAX)
+                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{segments}}, $array_ref->[$_]) for 0.._MAX_STRUCTS
                        } else {
-                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for (0..$MAX)
+                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for 0.._MAX_STRUCTS
                        }
                      }
                      $array_ref
                    }
                   );
+  # -------------------------------------------------------
+  # Generate the correct converter direction, used by BUILD
+  # -------------------------------------------------------
+  install_modifier($whoami, 'fresh', '_converter_indice' => sub { $converter_indice } );
+
   # ----------------------------------------------------
   # The builders that the implementation should 'around'
   # ----------------------------------------------------
@@ -427,7 +459,7 @@ role {
   install_modifier($whoami, 'fresh', 'build_unreserved'               => sub {  $PARAMS->{unreserved} });
   install_modifier($whoami, 'fresh', 'build_is_character_normalized'  => sub {                    !!1 });
   install_modifier($whoami, 'fresh', 'build_default_port'             => sub {                  undef });
-  install_modifier($whoami, 'fresh', 'build_reg_name_is_domain_name'  => sub {                    !!0 });
+  install_modifier($whoami, 'fresh', 'build_reg_name_convert_as_domain_name'  => sub {                    !!0 });
   foreach (@normalizer_names, @converter_names) {
     install_modifier($whoami, 'fresh', "build_$_"                     => sub {              return {} });
   }
@@ -435,17 +467,13 @@ role {
 # =============================================================================
 # Instance methods
 # =============================================================================
-sub struct_by_type           { $_[0]->_structs->[$_[0]->indice($_[1])] }
-sub output_by_type           { $_[0]->struct_by_type($_[1])->output }
-sub struct_by_indice         { $_[0]->_structs->[$_[1]] }
-sub output_by_indice         { $_[0]->struct_by_indice($_[1])->output }
 sub abs {
   my ($self, $base) = @_;
   #
   # Do nothing if $self is already absolute
   #
-  my $self_struct = $self->_structs->[$self->indice_raw];
-  return $self if (! Undef->check($self_struct->scheme));
+  my $self_struct = $self->_structs->[_RAW_STRUCT];
+  return $self if (defined $self_struct->{scheme});
   #
   # https://tools.ietf.org/html/rfc3986
   #
@@ -459,19 +487,19 @@ sub abs {
   # undefined, though it may be empty.
   #
   my $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : blessed($self)->new($base);
-  my $base_struct = $base_ri->_structs->[$base_ri->indice_raw];
+  my $base_struct = $base_ri->{_structs}->[_RAW_STRUCT];
   #
   # This work only if $base is absolute and ($self, $base) support the generic syntax
   #
-  croak "$base is not absolute"            unless ! Undef->check($base_struct->scheme);
+  croak "$base is not absolute"            unless defined $base_struct->{scheme};
   croak "$self must do the generic syntax" unless Generic->check($self_struct);
   croak "$base must do the generic syntax" unless Generic->check($base_struct);
   my %Base = (
-              scheme    => $base_struct->scheme,
-              authority => $base_struct->authority,
-              path      => $base_struct->path,
-              query     => $base_struct->query,
-              fragment  => $base_struct->fragment
+              scheme    => $base_struct->{scheme},
+              authority => $base_struct->{authority},
+              path      => $base_struct->{path},
+              query     => $base_struct->{query},
+              fragment  => $base_struct->{fragment}
              );
   #
   #   Normalization of the base URI, as described in Sections 6.2.2 and
@@ -488,11 +516,11 @@ sub abs {
   # (R.scheme, R.authority, R.path, R.query, R.fragment) = parse(R);
   #
   my %R = (
-           scheme    => $self_struct->scheme,
-           authority => $self_struct->authority,
-           path      => $self_struct->path,
-           query     => $self_struct->query,
-           fragment  => $self_struct->fragment
+           scheme    => $self_struct->{scheme},
+           authority => $self_struct->{authority},
+           path      => $self_struct->{path},
+           query     => $self_struct->{query},
+           fragment  => $self_struct->{fragment}
           );
   #
   # -- A non-strict parser may ignore a scheme in the reference
@@ -502,13 +530,13 @@ sub abs {
   #   $R{scheme} = undef;
   # }
   my %T = ();
-  if (! Undef->check($R{scheme})) {
+  if (defined  $R{scheme}) {
     $T{scheme}    = $R{scheme};
     $T{authority} = $R{authority};
     $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
     $T{query}     = $R{query};
   } else {
-    if (! Undef->check($R{authority})) {
+    if (defined  $R{authority}) {
       $T{authority} = $R{authority};
       $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
       $T{query}     = $R{query};
@@ -537,33 +565,6 @@ sub abs {
 # =============================================================================
 # Class methods
 # =============================================================================
-sub indice_raw                         {                            RAW }
-sub indice_case_normalized             {                CASE_NORMALIZED }
-sub indice_character_normalized        {           CHARACTER_NORMALIZED }
-sub indice_percent_encoding_normalized {    PERCENT_ENCODING_NORMALIZED }
-sub indice_path_segment_normalized     {        PATH_SEGMENT_NORMALIZED }
-sub indice_scheme_based_normalized     {        SCHEME_BASED_NORMALIZED }
-sub indice_protocol_based_normalized   {      PROTOCOL_BASED_NORMALIZED }
-sub indice_uri_converted               {                  URI_CONVERTED }
-sub indice_iri_converted               {                  IRI_CONVERTED }
-sub indice_normalized                  {         $indice_normalizer_end }
-sub indice {
-  my ($class, $what) = @_;
-
-  croak "Invalid undef argument" if (Undef->check($what));
-
-  if    ($what eq 'RAW'                        ) { return                         RAW }
-  elsif ($what eq 'URI_CONVERTED'              ) { return               URI_CONVERTED }
-  elsif ($what eq 'IRI_CONVERTED'              ) { return               IRI_CONVERTED }
-  elsif ($what eq 'CASE_NORMALIZED'            ) { return             CASE_NORMALIZED }
-  elsif ($what eq 'CHARACTER_NORMALIZED'       ) { return        CHARACTER_NORMALIZED }
-  elsif ($what eq 'PERCENT_ENCODING_NORMALIZED') { return PERCENT_ENCODING_NORMALIZED }
-  elsif ($what eq 'PATH_SEGMENT_NORMALIZED'    ) { return     PATH_SEGMENT_NORMALIZED }
-  elsif ($what eq 'SCHEME_BASED_NORMALIZED'    ) { return     SCHEME_BASED_NORMALIZED }
-  elsif ($what eq 'PROTOCOL_BASED_NORMALIZED'  ) { return   PROTOCOL_BASED_NORMALIZED }
-  else                                           { croak "Invalid argument $what"     }
-}
-
 sub percent_encode {
   my ($class, $string, $regexp) = @_;
 
@@ -780,10 +781,12 @@ sub unescape {
 # Internal class methods
 # =============================================================================
 sub _generate_attributes {
-  my $class = shift;
-  my $type = shift;
-  my ($indice_start, $indice_end) = (shift, shift);
-  foreach (@_) {
+  my ($class, $type, @names) = @_;
+
+  #
+  # The lazy builders that implementation should around
+  #
+  foreach (@names) {
     my $builder = "build_$_";
     has $_ => (is => 'ro', isa => HashRef[CodeRef],
                lazy => 1,
@@ -800,14 +803,19 @@ sub _generate_attributes {
                           }
               );
   }
+
   my $_type_names                  = "_${type}_names";
   my $_type_wrapper                = "_${type}_wrapper";
   my $_type_wrapper_with_accessors = "_${type}_wrapper_with_accessors";
-  my @_type_names = ();
-  push(@_type_names, undef) for (0..$indice_start - 1);
-  push(@_type_names, @_);
-  push(@_type_names, undef) for ($indice_end + 1..$MAX);
-  has $_type_names   => (is => 'ro', isa => ArrayRef[Str|Undef], default => sub { \@_type_names });
+  #
+  # Just a convenient thing for us
+  #
+  has $_type_names   => (is => 'ro', isa => ArrayRef[Str|Undef], default => sub { \@names });
+  #
+  # The important thing is these wrappers:
+  # - the one using accessors so that we are sure builders are executed
+  # - the one without the accessors for performance
+  #
   has $_type_wrapper => (is => 'ro', isa => ArrayRef[CodeRef|Undef],
                          # lazy => 1,                              Not lazy and this is INTENTIONAL
                          handles_via => 'Array',
@@ -815,7 +823,7 @@ sub _generate_attributes {
                                      "_get_$type" => 'get'
                                     },
                          default => sub {
-                           $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names, 0)
+                           $_[0]->_build_impl_sub(0, @names)
                          }
                         );
   has $_type_wrapper_with_accessors => (is => 'ro', isa => ArrayRef[CodeRef|Undef],
@@ -825,7 +833,7 @@ sub _generate_attributes {
                                                     "_get_${type}_with_accessors" => 'get'
                                                    },
                                         default => sub {
-                                          $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names, 1)
+                                          $_[0]->_build_impl_sub(1, @names)
                                         }
                                        );
 }
@@ -833,29 +841,26 @@ sub _generate_attributes {
 # Internal instance methods
 # =============================================================================
 sub _build_impl_sub {
-  my ($self, $istart, $iend, $names, $call_builder) = @_;
+  my ($self, $call_builder, @names) = @_;
+
   my @array = ();
-  foreach (0..$MAX) {
-    if (($_ < $istart) || ($_ > $iend)) {
-      push(@array, undef);
-    } else {
-      my $name = $self->$names->[$_];
-      my $exists = "exists_$name";
-      my $getter = "get_$name";
-      #
-      # We KNOW in advance that we are talking with a hash. So no need to
-      # to do extra calls. The $exists and $getter variables are intended
-      # for the outside world.
-      # The inlined version using these accessors is:
-      my $inlined_with_accessors = <<INLINED_WITH_ACCESSORS;
+  foreach my $name (@names) {
+    my $exists = "exists_$name";
+    my $getter = "get_$name";
+    #
+    # We KNOW in advance that we are talking with a hash. So no need to
+    # to do extra calls. The $exists and $getter variables are intended
+    # for the outside world.
+    # The inlined version using these accessors is:
+    my $inlined_with_accessors = <<INLINED_WITH_ACCESSORS;
   # my (\$self, \$criteria, \$value) = \@_;
   #
   # This is intentionnaly doing NOTHING, but call the builders -;
   #
   \$_[0]->$exists(\$_[1])
 INLINED_WITH_ACCESSORS
-      # The inlined version using direct perl op is:
-      my $inlined_without_accessors = <<INLINED_WITHOUT_ACCESSORS;
+    # The inlined version using direct perl op is:
+    my $inlined_without_accessors = <<INLINED_WITHOUT_ACCESSORS;
   # my (\$self, \$criteria, \$value) = \@_;
   #
   # At run-time, in particular Protocol-based normalizers,
@@ -863,11 +868,10 @@ INLINED_WITH_ACCESSORS
   #
   exists(\$_[0]->{$name}->{\$_[1]}) ? goto \$_[0]->{$name}->{\$_[1]} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
-      if ($call_builder) {
-        push(@array,eval "sub {$inlined_with_accessors}")
-      } else {
-        push(@array,eval "sub {$inlined_without_accessors}")
-      }
+    if ($call_builder) {
+      push(@array,eval "sub {$inlined_with_accessors}")
+    } else {
+      push(@array,eval "sub {$inlined_without_accessors}")
     }
   }
   \@array

@@ -40,7 +40,7 @@ use Try::Tiny;
 around build_uri_converter => sub {
   my ($orig, $self) = (shift, shift);
   my $rc = $self->$orig(@_);
-  if ($self->reg_name_is_domain_name) {
+  if ($self->reg_name_convert_as_domain_name) {
     $rc->{reg_name} = sub {
       local $MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic::AllowUnassigned = 1,
       goto &_domain_to_ascii
@@ -53,7 +53,7 @@ around build_iri_converter => sub {
   my ($orig, $self) = (shift, shift);
 
   my $rc = $self->$orig(@_);
-  if ($self->reg_name_is_domain_name) {
+  if ($self->reg_name_convert_as_domain_name) {
     $rc->{reg_name} = sub {
       local $MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic::AllowUnassigned = 0,
       goto &_domain_to_ascii
@@ -75,7 +75,7 @@ around build_case_normalizer => sub {
   # triplet (e.g., "%3a" versus "%3A") are case-insensitive and therefore
   # should be normalized to use uppercase letters for the digits A - F.
   #
-  $rc->{$self->pct_encoded} = sub { uc $_[2] } if (defined $self->pct_encoded);
+  $rc->{$self->pct_encoded} = sub { uc $_[2] } if (defined($self->pct_encoded));
 
   # When an IRI uses components of the generic syntax, the component
   # syntax equivalence rules always apply; namely, that the scheme and
