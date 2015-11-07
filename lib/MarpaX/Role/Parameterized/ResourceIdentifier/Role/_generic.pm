@@ -39,7 +39,6 @@ use Try::Tiny;
 
 around build_uri_converter => sub {
   my ($orig, $self) = (shift, shift);
-
   my $rc = $self->$orig(@_);
   if ($self->reg_name_is_domain_name) {
     $rc->{reg_name} = sub {
@@ -168,7 +167,7 @@ sub _domain_to_ascii {
   my $self = $_[0];
   my $rc = $_[2];
   try {
-    $rc = domain_to_ascii($rc, UseSTD3ASCIIRules => 1, AllowUnassigned => $MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic::AllowUnassigned)
+    $rc = domain_to_ascii($rc, UseSTD3ASCIIRules => 1, AllowUnassigned => $MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic::AllowUnassigned);
   } catch {
     $self->_logger->warnf('%s', $_);
     return

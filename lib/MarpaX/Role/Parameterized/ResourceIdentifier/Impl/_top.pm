@@ -2,6 +2,7 @@ use strict;
 use warnings FATAL => 'all';
 
 package MarpaX::Role::Parameterized::ResourceIdentifier::Impl::_top;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 
 # ABSTRACT: Resource Identifier: top level implementation
 
@@ -13,6 +14,8 @@ use Carp qw/croak/;
 use Module::Runtime qw/use_module/;
 use Types::Standard -all;
 use Try::Tiny;
+
+our $setup  = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
 
 sub _new_from_specific {
   my ($class, $args, $scheme) = @_;
@@ -40,6 +43,8 @@ sub _new_from_generic {
   try {
     use_module($subclass);
     $self = $subclass->new($args);
+  } catch {
+    croak $_ unless $setup->uri_compat
   };
   $self
 }

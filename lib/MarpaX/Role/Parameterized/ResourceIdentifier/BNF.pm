@@ -167,7 +167,27 @@ sub BUILDARGS {
 
 sub BUILD {
   my ($self) = @_;
+  #
+  # Make sure we are calling the lazy builders. This is because
+  # the parser is optimized by using explicit hash access to
+  # $self
+  #
+  # Normalizers
+  #
+  my $normalizer_wrapper_with_accessors = $self->_normalizer_wrapper_with_accessors;
+  do { $normalizer_wrapper_with_accessors->[$_]->($self, '', '', '') } for ($indice_normalizer_start..$indice_normalizer_end);
+  #
+  # Converters
+  #
+  my $converter_wrapper_with_accessors = $self->_converter_wrapper_with_accessors;
+  do { $converter_wrapper_with_accessors->[$_]->($self, '', '', '') }  for ($indice_converter_start..$indice_converter_end);
+  #
+  # Parse the input
+  #
   $self->_parse;
+  #
+  # And install an after modifier to automatically parse it again at every change
+  #
   after input => sub { $self->_parse }
 }
 # =============================================================================
@@ -247,7 +267,6 @@ role {
   my $marpa_trace_terminals = $setup->marpa_trace_terminals;
   my $marpa_trace_values    = $setup->marpa_trace_values;
   my $marpa_trace           = $setup->marpa_trace;
-  my $uri_compat            = $setup->uri_compat;
 
   # -------
   # Logging
@@ -321,17 +340,13 @@ role {
                      # empty string, i.e. a situation that can never happen during
                      # parsing
                      #
-                     # $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['input                            '])->Dump);
-                     #
                      # The normalization ladder
                      #
                      do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input, '') } for ($indice_normalizer_start..$indice_normalizer_end);
-                     # $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Normalized input                 '])->Dump);
                      #
                      # The converters. Every entry is independant.
                      #
                      do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$_]->($self, '', $input, '') } for ($indice_converter_start..$indice_converter_end);
-                     # $self->_logger->debugf('%s: %s', $whoami, Data::Dumper->new([$input], ['Converted input                  '])->Dump);
                      #
                      # Parse (may croak)
                      #
@@ -787,8 +802,9 @@ sub _generate_attributes {
                           }
               );
   }
-  my $_type_names   = "_${type}_names";
-  my $_type_wrapper = "_${type}_wrapper";
+  my $_type_names                  = "_${type}_names";
+  my $_type_wrapper                = "_${type}_wrapper";
+  my $_type_wrapper_with_accessors = "_${type}_wrapper_with_accessors";
   my @_type_names = ();
   push(@_type_names, undef) for (0..$indice_start - 1);
   push(@_type_names, @_);
@@ -801,15 +817,25 @@ sub _generate_attributes {
                                      "_get_$type" => 'get'
                                     },
                          default => sub {
-                           $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names)
+                           $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names, 0)
                          }
                         );
+  has $_type_wrapper_with_accessors => (is => 'ro', isa => ArrayRef[CodeRef|Undef],
+                                        # lazy => 1,                              Not lazy and this is INTENTIONAL
+                                        handles_via => 'Array',
+                                        handles => {
+                                                    "_get_${type}_with_accessors" => 'get'
+                                                   },
+                                        default => sub {
+                                          $_[0]->_build_impl_sub($indice_start, $indice_end, $_type_names, 1)
+                                        }
+                                       );
 }
 # =============================================================================
 # Internal instance methods
 # =============================================================================
 sub _build_impl_sub {
-  my ($self, $istart, $iend, $names) = @_;
+  my ($self, $istart, $iend, $names, $call_builder) = @_;
   my @array = ();
   foreach (0..$MAX) {
     if (($_ < $istart) || ($_ > $iend)) {
@@ -840,7 +866,11 @@ INLINED_WITH_ACCESSORS
   #
   exists(\$_[0]->{$name}->{\$_[1]}) ? goto \$_[0]->{$name}->{\$_[1]} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
-      push(@array,eval "sub {$inlined_without_accessors}")
+      if ($call_builder) {
+        push(@array,eval "sub {$inlined_with_accessors}")
+      } else {
+        push(@array,eval "sub {$inlined_without_accessors}")
+      }
     }
   }
   \@array
