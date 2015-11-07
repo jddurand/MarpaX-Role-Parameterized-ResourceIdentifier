@@ -13,7 +13,6 @@ use Encode qw/encode/;
 use MarpaX::RFC::RFC3629;
 use Moo::Role;
 use MooX::Role::Logger;
-use Types::Standard -all;
 use Try::Tiny;
 #
 # Arguments of every callback:
@@ -75,7 +74,7 @@ around build_case_normalizer => sub {
   # triplet (e.g., "%3a" versus "%3A") are case-insensitive and therefore
   # should be normalized to use uppercase letters for the digits A - F.
   #
-  $rc->{$self->pct_encoded} = sub { uc $_[2] } if (! Undef->check($self->pct_encoded));
+  $rc->{$self->pct_encoded} = sub { uc $_[2] } if (defined $self->pct_encoded);
 
   # When an IRI uses components of the generic syntax, the component
   # syntax equivalence rules always apply; namely, that the scheme and
@@ -101,7 +100,7 @@ around build_percent_encoding_normalizer => sub {
   # percent-encoded octet sequence that corresponds to an unreserved
   # character, as described in section 2.3 of [RFC3986].
   #
-  if (! Undef->check($self->pct_encoded)) {
+  if (defined $self->pct_encoded) {
     #
     # Inlined version for performance
     # The non-inlined version is:
@@ -153,7 +152,7 @@ around build_scheme_based_normalizer => sub {
   # scheme, is equivalent to one where the port and its ":" delimiter are
   # elided and thus should be removed by scheme-based normalization
   #
-  if (! Undef->check($self->default_port)) {
+  if (defined $self->default_port) {
     my $default_port= quotemeta($self->default_port);
     $rc->{authority} = sub { $_[2] =~ /:$default_port?\z/ ? substr($_[2], 0, $-[0]) : $_[2] }
   }
