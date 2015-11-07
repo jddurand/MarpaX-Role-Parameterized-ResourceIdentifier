@@ -501,13 +501,15 @@ sub abs {
   # undefined, though it may be empty.
   #
   my $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : blessed($self)->new($base);
-  my $base_struct = $base_ri->{_structs}->[_RAW_STRUCT];
   #
   # This work only if $base is absolute and ($self, $base) support the generic syntax
   #
-  croak "$base is not absolute"            unless defined $base_struct->{scheme};
+  croak "$base is not absolute" unless defined $base_ri->is_absolute;
+
   my $self_struct = $self->_structs->[_RAW_STRUCT];
   croak "$self must do the generic syntax" unless Generic->check($self_struct);
+
+  my $base_struct = $base_ri->{_structs}->[_RAW_STRUCT];
   croak "$base must do the generic syntax" unless Generic->check($base_struct);
   my %Base = (
               scheme    => $base_struct->{scheme},
