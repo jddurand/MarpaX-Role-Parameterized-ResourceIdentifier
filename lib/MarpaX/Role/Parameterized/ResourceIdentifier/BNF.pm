@@ -99,6 +99,7 @@ __PACKAGE__->_generate_attributes('converter',  @converter_names);
 # ------------------------------------------------------------------------------------------------
 # Internal slots: one for the raw parse, one for the normalized value, one for the converted value
 # ------------------------------------------------------------------------------------------------
+has _orig_arg               => ( is => 'rw',  isa => Any );   # For cloning
 has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
 use constant {
   _RAW_STRUCT               =>  0,
@@ -125,7 +126,10 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 sub raw        { $_[0]->{_structs}->[0]->{$_[1] // 'output'} }
 sub normalized { $_[0]->{_structs}->[1]->{$_[1] // 'output'} }
 sub converted  { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
-
+#
+# Let's be always URI compatible for the canonical method
+#
+sub canonical  { goto &normalized }
 # =======================================================================
 # We want parsing to happen immedately AFTER object was build and then at
 # every input reconstruction
@@ -165,7 +169,7 @@ sub BUILDARGS {
   my $input;
   my $is_character_normalized;
 
-  my %args = ();
+  my %args = (_orig_arg => $first_arg);
 
   if (StringLike->check($first_arg)) {
     $args{input} = "$first_arg";                        # Eventual stringification
@@ -246,7 +250,8 @@ our $check_params = compile(
                                  reserved    => RegexpRef,
                                  unreserved  => RegexpRef,
                                  pct_encoded => Str|Undef,
-                                 mapping     => HashRef[Str]
+                                 mapping     => HashRef[Str],
+                                 _orig_arg   => Optional[Any]
                                 ]
                            );
 
@@ -470,6 +475,29 @@ role {
   foreach (@normalizer_names, @converter_names) {
     install_modifier($whoami, 'fresh', "build_$_"                     => sub {              return {} });
   }
+  # -------------------------------------------
+  # Provide accessors to all structures, fields
+  # -------------------------------------------
+  foreach (0.._MAX_STRUCTS) {
+    my $what;
+    if    ($_ == 0) { $what = '_raw_struct'        }
+    elsif ($_ == 1) { $what = '_normalized_struct' }
+    elsif ($_ == 2) { $what = '_converted_struct'  }
+    else            { croak 'Internal error'       }
+    my $inlined = "\$_[0]->_structs->[$_]";
+    install_modifier($whoami, 'fresh', $what                          => eval "sub { $inlined }" );
+  }
+  #
+  # Converted and normalized structures contents should remain internal, not the raw struct
+  #
+  foreach (@fields) {
+    my $inlined = "\$_[0]->_structs->[" . _RAW_STRUCT . "]->$_";
+    install_modifier($whoami, 'fresh', "_$_"                          => eval "sub { $inlined }" );
+  }
+  #
+  # List of fields
+  #
+  install_modifier($whoami, 'fresh', '__fields'                       => sub { @fields } );
 };
 # =============================================================================
 # Instance methods
@@ -579,6 +607,12 @@ sub abs {
 
   blessed($self)->new(__PACKAGE__->_recompose(\%T))
 }
+sub clone {
+  my ($self) = @_;
+
+  blessed($self)->new($self->_orig_arg);
+}
+
 # =============================================================================
 # Class methods
 # =============================================================================
