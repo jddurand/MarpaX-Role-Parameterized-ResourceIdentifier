@@ -126,21 +126,14 @@ sub raw        { $_[0]->{_structs}->[0]->{$_[1] // 'output'} }
 sub normalized { $_[0]->{_structs}->[1]->{$_[1] // 'output'} }
 sub converted  { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
 
-# -------------
-# The overloads
-# -------------
-use overload (
-              '""'     => sub { $_[0]->raw },
-              '=='     => sub { $_[0]->normalized eq $_[1]->normalized },
-              '!='     => sub { $_[0]->normalized ne $_[1]->normalized },
-              fallback => 1,
-             );
-
 # =======================================================================
 # We want parsing to happen immedately AFTER object was build and then at
 # every input reconstruction
 # =======================================================================
-our $setup                = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
+our $setup;
+BEGIN {
+  $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
+}
 our $check_BUILDARGS      = compile(StringLike|HashRef);
 our $check_BUILDARGS_Dict = compile(slurpy Dict[
                                                 input                           => Optional[StringLike],
@@ -150,6 +143,20 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
                                                 is_character_normalized         => Optional[Bool],
                                                 reg_name_convert_as_domain_name => Optional[Bool]
                                                ]);
+# -------------
+# The overloads
+# -------------
+use overload (
+              '""'     => sub { $_[0]->raw },
+              '=='     => sub { $setup->uri_compat ?  _obj_eq(@_) : $_[0]->normalized eq $_[1]->normalized },
+              '!='     => sub { $setup->uri_compat ? !_obj_eq(@_) : $_[0]->normalized ne $_[1]->normalized },
+              fallback => 1,
+             );
+
+# Copy from URI
+# Check if two objects are the same object
+sub _obj_eq { overload::StrVal($_[0]) eq overload::StrVal($_[1]) }
+
 sub BUILDARGS {
   my ($class, $arg) = @_;
 
@@ -467,13 +474,20 @@ role {
 # =============================================================================
 # Instance methods
 # =============================================================================
+sub is_absolute {
+  my ($self) = @_;
+
+  my $self_struct = $self->_structs->[_RAW_STRUCT];
+  return 0 if ! defined $self_struct->{scheme};
+  length $self_struct->{scheme}
+}
+
 sub abs {
   my ($self, $base) = @_;
   #
   # Do nothing if $self is already absolute
   #
-  my $self_struct = $self->_structs->[_RAW_STRUCT];
-  return $self if (defined $self_struct->{scheme});
+  return $self if $self->is_absolute;
   #
   # https://tools.ietf.org/html/rfc3986
   #
@@ -492,6 +506,7 @@ sub abs {
   # This work only if $base is absolute and ($self, $base) support the generic syntax
   #
   croak "$base is not absolute"            unless defined $base_struct->{scheme};
+  my $self_struct = $self->_structs->[_RAW_STRUCT];
   croak "$self must do the generic syntax" unless Generic->check($self_struct);
   croak "$base must do the generic syntax" unless Generic->check($base_struct);
   my %Base = (

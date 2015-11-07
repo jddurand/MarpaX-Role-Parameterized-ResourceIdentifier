@@ -12,16 +12,10 @@ use Types::Standard -all;
 
 # AUTHORITY
 
-our $MARPA_TRACE_TERMINALS = ($ENV{'MarpaX_RI_MARPA_TRACE_TERMINALS'} // 0) ? 1 : 0;
-our $MARPA_TRACE_VALUES    = ($ENV{'MarpaX_RI_MARPA_TRACE_VALUES'}    // 0) ? 1 : 0;
-our $URI_COMPAT            = ($ENV{'MarpaX_RI_URI_COMPAT'}            // 1);
-our $PLUGINS_DIRNAME       = ($ENV{'MarpaX_RI_PLUGINS_DIRNAME'}       // 'Plugins');
-our $CAN_SCHEME_METHODNAME = ($ENV{'MarpaX_RI_CAN_SCHEME_METHODNAME'} // 'can_scheme');
-
-has marpa_trace_terminals => ( is => 'ro', isa => Bool, default => sub { $MARPA_TRACE_TERMINALS } );
-has marpa_trace_values    => ( is => 'ro', isa => Bool, default => sub { $MARPA_TRACE_VALUES    } );
-has uri_compat            => ( is => 'ro', isa => Bool, default => sub { $URI_COMPAT            } );
-has plugins_dirname       => ( is => 'ro', isa => Str,  default => sub { $PLUGINS_DIRNAME       } );
-has can_scheme_methodname => ( is => 'ro', isa => Str,  default => sub { $CAN_SCHEME_METHODNAME } );
+sub marpa_trace_terminals {($ENV{'MarpaX_RI_MARPA_TRACE_TERMINALS'} // 0) ? 1 : 0   }
+sub marpa_trace_values    {($ENV{'MarpaX_RI_MARPA_TRACE_VALUES'}    // 0) ? 1 : 0   }
+sub uri_compat            { $ENV{'MarpaX_RI_URI_COMPAT'}            // 1            }
+sub plugins_dirname       { $ENV{'MarpaX_RI_PLUGINS_DIRNAME'}       // 'Plugins'    }
+sub can_scheme_methodname { $ENV{'MarpaX_RI_CAN_SCHEME_METHODNAME'} // 'can_scheme' }
 
 1;
