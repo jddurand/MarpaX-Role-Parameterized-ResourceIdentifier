@@ -2,7 +2,6 @@ use strict;
 use warnings FATAL => 'all';
 
 package MarpaX::Role::Parameterized::ResourceIdentifier::Impl::_top;
-use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 
 # ABSTRACT: Resource Identifier: top level implementation
 
@@ -11,6 +10,7 @@ use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 # AUTHORITY
 
 use Carp qw/croak/;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use Module::Find qw/findsubmod/;
 use Module::Runtime qw/use_module is_module_name/;
 use Scalar::Util qw/blessed/;

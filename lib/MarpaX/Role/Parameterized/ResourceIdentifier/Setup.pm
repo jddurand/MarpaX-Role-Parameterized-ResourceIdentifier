@@ -3,7 +3,6 @@ use warnings FATAL => 'all';
 
 package MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use Moo;
-with 'MooX::Singleton';
 use Types::Standard -all;
 
 # ABSTRACT: Resource Identifier setup
@@ -17,5 +16,7 @@ sub marpa_trace_values    {($ENV{'MarpaX_RI_MARPA_TRACE_VALUES'}    // 0) ? 1 : 
 sub uri_compat            { $ENV{'MarpaX_RI_URI_COMPAT'}            // 1            }
 sub plugins_dirname       { $ENV{'MarpaX_RI_PLUGINS_DIRNAME'}       // 'Plugins'    }
 sub can_scheme_methodname { $ENV{'MarpaX_RI_CAN_SCHEME_METHODNAME'} // 'can_scheme' }
+
+with 'MooX::Singleton';
 
 1;
