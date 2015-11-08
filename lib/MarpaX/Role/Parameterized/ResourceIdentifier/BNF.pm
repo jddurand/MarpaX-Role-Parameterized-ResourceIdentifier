@@ -513,10 +513,6 @@ sub is_absolute {
 sub abs {
   my ($self, $base) = @_;
   #
-  # Do nothing if $self is already absolute
-  #
-  return $self if $self->is_absolute;
-  #
   # https://tools.ietf.org/html/rfc3986
   #
   # 5.2.1.  Pre-parse the Base URI
@@ -571,9 +567,10 @@ sub abs {
   # -- A non-strict parser may ignore a scheme in the reference
   # -- if it is identical to the base URI's scheme.
   # --
-  # if ((! $strict) && ($R{scheme} eq $Base{scheme})) {
-  #   $R{scheme} = undef;
-  # }
+  my $strict = $setup->uri_compat ? ($URI::ABS_ALLOW_RELATIVE_SCHEME ? 0 : 1) : 1;
+  if ((! $strict) && defined($R{scheme}) && defined($Base{scheme}) && ($R{scheme} eq $Base{scheme})) {
+    $R{scheme} = undef;
+  }
   my %T = ();
   if (defined  $R{scheme}) {
     $T{scheme}    = $R{scheme};
