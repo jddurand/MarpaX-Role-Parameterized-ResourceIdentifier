@@ -2,6 +2,13 @@ use strict;
 use warnings FATAL => 'all';
 
 package MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
+
+# ABSTRACT: Resource Identifier BNF role
+
+# VERSION
+
+# AUTHORITY
+
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
 use Data::Dumper;
@@ -131,12 +138,12 @@ sub converted  { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
 #
 sub canonical  { goto &normalized }
 # =======================================================================
-# We want parsing to happen immedately AFTER object was build and then at
+# We want parsing to happen immedately AFTER object was built and then at
 # every input reconstruction
 # =======================================================================
-our $setup;
+our $SETUP_PACKAGE;
 BEGIN {
-  $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
+  $SETUP_PACKAGE = 'MarpaX::Role::Parameterized::ResourceIdentifier::Setup';
 }
 our $check_BUILDARGS      = compile(StringLike|HashRef);
 our $check_BUILDARGS_Dict = compile(slurpy Dict[
@@ -152,8 +159,8 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
 # -------------
 use overload (
               '""'     => sub { $_[0]->raw },
-              '=='     => sub { $setup->uri_compat ?  _obj_eq(@_) : $_[0]->normalized eq $_[1]->normalized },
-              '!='     => sub { $setup->uri_compat ? !_obj_eq(@_) : $_[0]->normalized ne $_[1]->normalized },
+              '=='     => sub { $SETUP_PACKAGE->new->uri_compat ?  _obj_eq(@_) : $_[0]->normalized eq $_[1]->normalized },
+              '!='     => sub { $SETUP_PACKAGE->new->uri_compat ? !_obj_eq(@_) : $_[0]->normalized ne $_[1]->normalized },
               fallback => 1,
              );
 
@@ -197,7 +204,7 @@ sub BUILDARGS {
     }
   }
 
-  if ($setup->uri_compat) {
+  if ($SETUP_PACKAGE->new->uri_compat) {
     #
     # Copy from URI:
     # Get rid of potential wrapping
@@ -246,6 +253,7 @@ our $check_params = compile(
                                  whoami      => Str,
                                  type        => Enum[qw/common generic/],
                                  spec        => Enum[qw/uri iri/],
+                                 top         => Str,
                                  bnf         => Str,
                                  reserved    => RegexpRef,
                                  unreserved  => RegexpRef,
@@ -276,6 +284,7 @@ role {
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
   my $spec        = $PARAMS->{spec};
+  my $top         = $PARAMS->{top};
   my $bnf         = $PARAMS->{bnf};
   my $mapping     = $PARAMS->{mapping};
 
@@ -290,7 +299,15 @@ role {
   #
   $bnf = ":default ::= action => $action_full_name\n$bnf";
 
-  my $is_common   = $type eq 'common';
+  #
+  # Variable helpers
+  #
+  my $_RAW_STRUCT        = _RAW_STRUCT;
+  my $_NORMALIZED_STRUCT = _NORMALIZED_STRUCT;
+  my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
+  my $is_common          = $type eq 'common';
+  my $__PACKAGE__        = __PACKAGE__;
+  my $setup              = $SETUP_PACKAGE->new;
   #
   # A bnf package must provide correspondance between grammar symbols
   # and fields in a structure, in the form "<xxx>" => yyy.
@@ -349,11 +366,11 @@ role {
     #
     # Normalize
     #
-    do { $rc[_NORMALIZED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $rc[_NORMALIZED_STRUCT]) } for 0.._MAX_NORMALIZER;
+    do { $rc[$_NORMALIZED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $rc[$_NORMALIZED_STRUCT]) } for 0.._MAX_NORMALIZER;
     #
     # Convert
     #
-    $rc[_CONVERTED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, $criteria, $rc[_CONVERTED_STRUCT]);
+    $rc[$_CONVERTED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, $criteria, $rc[$_CONVERTED_STRUCT]);
 
     \@rc
   };
@@ -475,9 +492,9 @@ role {
   foreach (@normalizer_names, @converter_names) {
     install_modifier($whoami, 'fresh', "build_$_"                     => sub {              return {} });
   }
-  # -------------------------------------------
-  # Provide accessors to all structures, fields
-  # -------------------------------------------
+  # -------------------------------
+  # Accessors to structures, fields
+  # -------------------------------
   foreach (0.._MAX_STRUCTS) {
     my $what;
     if    ($_ == 0) { $what = '_raw_struct'        }
@@ -491,124 +508,187 @@ role {
   # Converted and normalized structures contents should remain internal, not the raw struct
   #
   foreach (@fields) {
-    my $inlined = "\$_[0]->_structs->[" . _RAW_STRUCT . "]->$_";
+    my $inlined = "\$_[0]->_structs->[$_RAW_STRUCT]->$_";
     install_modifier($whoami, 'fresh', "_$_"                          => eval "sub { $inlined }" );
   }
   #
   # List of fields
   #
   install_modifier($whoami, 'fresh', '__fields'                       => sub { @fields } );
+  #
+  # All instance methods. Some of them could have been writen outside of this
+  # parameterized role, though they might be a dependency on the $top variable
+  # at any time in the development of this package. This is why all instance methods
+  # are implemented here.
+  #
+  # Avoid a perl warning 'Name "URI::ABS_ALLOW_RELATIVE_SCHEME" used only once: possible typo'
+  #
+  my $dummy = $URI::ABS_ALLOW_RELATIVE_SCHEME;
+  #
+  # abs(): too complicated to inline
+  #
+  install_modifier($whoami, 'fresh',
+                   'abs' => sub
+                   {
+                     my ($self, $base) = @_;
+                     croak 'Missing second argument' unless defined $base;
+
+                     my $strict = $SETUP_PACKAGE->new->uri_compat ? (! $URI::ABS_ALLOW_RELATIVE_SCHEME) : 1;
+                     #
+                     # If reference is already absolute, nothing to do if we are in strict mode, or
+                     # if self's base is not the same as absolute base
+                     #
+                     my $base_ri;
+                     if ($self->is_absolute) {
+                       return $self if $strict;
+                       $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                       return $self unless $self->_scheme eq $base_ri->_scheme;
+                     }
+                     #
+                     # https://tools.ietf.org/html/rfc3986
+                     #
+                     # 5.2.1.  Pre-parse the Base URI
+                     #
+                     # The base URI (Base) is ./.. parsed into the five main components described in
+                     # Section 3.  Note that only the scheme component is required to be
+                     # present in a base URI; the other components may be empty or
+                     # undefined.  A component is undefined if its associated delimiter does
+                     # not appear in the URI reference; the path component is never
+                     # undefined, though it may be empty.
+                     #
+                     $base_ri //= (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                     #
+                     # This work only if $base is absolute and ($self, $base) support the generic syntax
+                     #
+                     croak "$base is not absolute" unless $base_ri->is_absolute;
+
+                     my $self_struct = $self->_structs->[$_RAW_STRUCT];
+                     croak "$self must do the generic syntax" unless Generic->check($self_struct);
+
+                     my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
+                     croak "$base must do the generic syntax" unless Generic->check($base_struct);
+                     my %Base = (
+                                 scheme    => $base_struct->{scheme},
+                                 authority => $base_struct->{authority},
+                                 path      => $base_struct->{path},
+                                 query     => $base_struct->{query},
+                                 fragment  => $base_struct->{fragment}
+                                );
+                     #
+                     #   Normalization of the base URI, as described in Sections 6.2.2 and
+                     # 6.2.3, is optional.  A URI reference must be transformed to its
+                     # target URI before it can be normalized.
+                     #
+                     # 5.2.2.  Transform References
+                     #
+                     #
+                     # -- The URI reference is parsed into the five URI components
+                     #
+                     #
+                     # --
+                     # (R.scheme, R.authority, R.path, R.query, R.fragment) = parse(R);
+                     #
+                     my %R = (
+                              scheme    => $self_struct->{scheme},
+                              authority => $self_struct->{authority},
+                              path      => $self_struct->{path},
+                              query     => $self_struct->{query},
+                              fragment  => $self_struct->{fragment}
+                             );
+                     #
+                     # -- A non-strict parser may ignore a scheme in the reference
+                     # -- if it is identical to the base URI's scheme.
+                     # --
+                     if ((! $strict) && defined($R{scheme}) && defined($Base{scheme}) && ($R{scheme} eq $Base{scheme})) {
+                       $R{scheme} = undef;
+                     }
+                     my %T = ();
+                     if (defined  $R{scheme}) {
+                       $T{scheme}    = $R{scheme};
+                       $T{authority} = $R{authority};
+                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+                       $T{query}     = $R{query};
+                     } else {
+                       if (defined  $R{authority}) {
+                         $T{authority} = $R{authority};
+                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+                         $T{query}     = $R{query};
+                       } else {
+                         if (! length($R{path})) {
+                           $T{path} = $Base{path};
+                           $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query}
+                         } else {
+                           if (substr($R{path}, 0, 1) eq '/') {
+                             $T{path} = __PACKAGE__->remove_dot_segments($R{path})
+                           } else {
+                             $T{path} = __PACKAGE__->_merge(\%Base, \%R);
+                             $T{path} = __PACKAGE__->remove_dot_segments($T{path});
+                           }
+                           $T{query} = $R{query};
+                         }
+                         $T{authority} = $Base{authority};
+                       }
+                       $T{scheme} = $Base{scheme};
+                     }
+
+                     $T{fragment} = $R{fragment};
+
+                     $top->new(__PACKAGE__->_recompose(\%T))
+                   }
+                  );
+  #
+  # clone(): inlined
+  #
+  my $clone_inlined = <<CLONE;
+$top->new(\$_[0]->{_orig_arg})
+CLONE
+  install_modifier($whoami, 'fresh', clone => eval "sub { $clone_inlined }");
+  #
+  # is_absolute(): inlined
+  #
+  my $is_absolute_inlined = <<IS_ABSOLUTE;
+my \$raw_struct = \$_[0]->{_structs}->[$_RAW_STRUCT];
+defined \$raw_struct->{scheme} ? length \$raw_struct->{scheme} : 0
+IS_ABSOLUTE
+  install_modifier($whoami, 'fresh', is_absolute => eval "sub { $is_absolute_inlined }");
+  #
+  # For all these fields, always apply the same algorithm.
+  # Note that opaque field always has precedence overt authority or path or query
+  #
+  my @components = qw/scheme authority path query fragment opaque/;
+  foreach my $component (@components) {
+    #
+    # Do it only if current structure support this component
+    #
+    next if ! $struct_new->can($component);
+    #
+    # Fields used for recomposition at always limited to scheme+opaque+fragment if:
+    # - current component is opaque, or
+    # - current structure is common
+    my @recompose_fields = (($component eq 'opaque') || $is_common) ? qw/scheme opaque fragment/ : qw/scheme authority path query fragment/;
+    my $component_inlined = <<COMPONENT_INLINED;
+my (\$self, \$argument) = \@_;
+#
+# Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
+#
+my \$struct    = $SETUP_PACKAGE->new->uri_compat ? \$_[0]->_normalized_struct : \$_[0]->_raw_struct;
+my \$value     = \$struct->{$component};
+return \$value unless defined \$argument;
+#
+# Always reparse
+#
+my \%hash = ();
+foreach (qw/@recompose_fields/) {
+  \$hash{\$_} = (\$_ eq '$component') ? \$argument : \$struct->{\$_}
+}
+#
+# Rebless and call us without argument
+#
+(\$_[0] = $top->new($__PACKAGE__->_recompose(\\\%hash)))->$component
+COMPONENT_INLINED
+    install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }");
+  }
 };
-# =============================================================================
-# Instance methods
-# =============================================================================
-sub is_absolute {
-  my ($self) = @_;
-
-  my $self_struct = $self->_structs->[_RAW_STRUCT];
-  return 0 if ! defined $self_struct->{scheme};
-  length $self_struct->{scheme}
-}
-
-sub abs {
-  my ($self, $base) = @_;
-  #
-  # https://tools.ietf.org/html/rfc3986
-  #
-  # 5.2.1.  Pre-parse the Base URI
-  #
-  # The base URI (Base) is ./.. parsed into the five main components described in
-  # Section 3.  Note that only the scheme component is required to be
-  # present in a base URI; the other components may be empty or
-  # undefined.  A component is undefined if its associated delimiter does
-  # not appear in the URI reference; the path component is never
-  # undefined, though it may be empty.
-  #
-  my $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : blessed($self)->new($base);
-  #
-  # This work only if $base is absolute and ($self, $base) support the generic syntax
-  #
-  croak "$base is not absolute" unless defined $base_ri->is_absolute;
-
-  my $self_struct = $self->_structs->[_RAW_STRUCT];
-  croak "$self must do the generic syntax" unless Generic->check($self_struct);
-
-  my $base_struct = $base_ri->{_structs}->[_RAW_STRUCT];
-  croak "$base must do the generic syntax" unless Generic->check($base_struct);
-  my %Base = (
-              scheme    => $base_struct->{scheme},
-              authority => $base_struct->{authority},
-              path      => $base_struct->{path},
-              query     => $base_struct->{query},
-              fragment  => $base_struct->{fragment}
-             );
-  #
-  #   Normalization of the base URI, as described in Sections 6.2.2 and
-  # 6.2.3, is optional.  A URI reference must be transformed to its
-  # target URI before it can be normalized.
-  #
-  # 5.2.2.  Transform References
-  #
-  #
-  # -- The URI reference is parsed into the five URI components
-  #
-  #
-  # --
-  # (R.scheme, R.authority, R.path, R.query, R.fragment) = parse(R);
-  #
-  my %R = (
-           scheme    => $self_struct->{scheme},
-           authority => $self_struct->{authority},
-           path      => $self_struct->{path},
-           query     => $self_struct->{query},
-           fragment  => $self_struct->{fragment}
-          );
-  #
-  # -- A non-strict parser may ignore a scheme in the reference
-  # -- if it is identical to the base URI's scheme.
-  # --
-  my $strict = $setup->uri_compat ? ($URI::ABS_ALLOW_RELATIVE_SCHEME ? 0 : 1) : 1;
-  if ((! $strict) && defined($R{scheme}) && defined($Base{scheme}) && ($R{scheme} eq $Base{scheme})) {
-    $R{scheme} = undef;
-  }
-  my %T = ();
-  if (defined  $R{scheme}) {
-    $T{scheme}    = $R{scheme};
-    $T{authority} = $R{authority};
-    $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
-    $T{query}     = $R{query};
-  } else {
-    if (defined  $R{authority}) {
-      $T{authority} = $R{authority};
-      $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
-      $T{query}     = $R{query};
-    } else {
-      if (! length($R{path})) {
-        $T{path} = $Base{path};
-        $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query}
-      } else {
-        if (substr($R{path}, 0, 1) eq '/') {
-          $T{path} = __PACKAGE__->remove_dot_segments($R{path})
-        } else {
-          $T{path} = __PACKAGE__->_merge(\%Base, \%R);
-          $T{path} = __PACKAGE__->remove_dot_segments($T{path});
-        }
-        $T{query} = $R{query};
-      }
-      $T{authority} = $Base{authority};
-    }
-    $T{scheme} = $Base{scheme};
-  }
-
-  $T{fragment} = $R{fragment};
-
-  blessed($self)->new(__PACKAGE__->_recompose(\%T))
-}
-sub clone {
-  my ($self) = @_;
-
-  blessed($self)->new($self->_orig_arg);
-}
 
 # =============================================================================
 # Class methods
@@ -673,15 +753,20 @@ sub _recompose {
   #
   # 5.3.  Component Recomposition
   #
-  # We are called only by abs(), so we are sure to have a hash reference in argument
-  #
+  # We are compatiblee with both common and generic syntax:
+  # - the common  case can have only scheme, path (== opaque) and fragment
+  # - the generic case can have scheme, authority, path, query and fragment
   #
   my $result = '';
-  $result .=        $T->{scheme} . ':' if (! Undef->check($T->{scheme}));
-  $result .= '//' . $T->{authority}    if (! Undef->check($T->{authority}));
-  $result .=        $T->{path};
-  $result .= '?'  . $T->{query}        if (! Undef->check($T->{query}));
-  $result .= '#'  . $T->{fragment}     if (! Undef->check($T->{fragment}));
+  $result .=        $T->{scheme} . ':' if (defined $T->{scheme});
+  if (defined $T->{opaque}) {
+    $result .=        $T->{opaque};
+  } else {
+    $result .= '//' . $T->{authority}    if (defined $T->{authority});
+    $result .=        $T->{path};
+    $result .= '?'  . $T->{query}        if (defined $T->{query});
+  }
+  $result .= '#'  . $T->{fragment}     if (defined $T->{fragment});
 
   $result
 }
@@ -984,3 +1069,26 @@ BEGIN {
 }
 
 1;
+__DATA__
+                     {
+                       my ($self, $argument) = @_;
+                       #
+                       # Returned value is always the canonical form in uri compat mode
+                       #
+                       my $struct    = $self->uri_compat ? $self->_normalized_struct : $self->_raw_struct;
+                       my $value     = $struct->{$value};
+                       return $value unless defined($argument);
+                       #
+                       # Always reparse
+                       #
+                       my %hash = ();
+                       foreach (@recompose_fields) {
+                         $hash{$_} = ($_ eq $component) ? $argument : $normalized_struct->$_;
+                       }
+                       $_[0] = $top->new(__PACKAGE__->_recompose(\%hash));
+                       #
+                       # Recursively call us but without argument -;
+                       #
+                       $_[0]->$component
+                     }
+                    );
