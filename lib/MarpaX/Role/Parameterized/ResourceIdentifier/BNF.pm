@@ -314,9 +314,8 @@ role {
   # The structure depend on the type: Common or Generic
   #
   my %fields = ();
-  my $struct_new = $is_common ? Common->new : Generic->new;
-  my $struct_class = blessed($struct_new);
-  my @fields = $struct_new->FIELDS;
+  my $struct_class = $is_common ? Common : Generic;
+  my @fields = $struct_class->FIELDS;
   map { $fields{$_} = 0 } @fields;
   while (my ($key, $value) = each %{$mapping}) {
     croak "[$type] symbol $key must be in the form <...>"
@@ -660,7 +659,7 @@ IS_ABSOLUTE
     #
     # Do it only if current structure support this component
     #
-    next if ! $struct_new->can($component);
+    next if ! $struct_class->can($component);
     #
     # Fields used for recomposition at always limited to scheme+opaque+fragment if:
     # - current component is opaque, or
