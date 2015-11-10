@@ -17,7 +17,7 @@ use Marpa::R2;
 use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
-use MarpaX::Role::Parameterized::ResourceIdentifier::Types qw/Common Generic/;
+# use MarpaX::Role::Parameterized::ResourceIdentifier::Types qw/Common Generic/; # I moved to hash see below
 use Moo::Role;
 use MooX::Role::Logger;
 use MooX::HandlesVia;
@@ -29,6 +29,59 @@ use Types::Encodings qw/Bytes/;
 use Types::Standard -all;
 use Types::TypeTiny qw/StringLike/;
 use Try::Tiny;
+
+our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
+
+# ---------------------------------------------------------------------------
+# Structures for Common and Generic syntax
+# My first implementation was using a MooX::Struct but I moved to an explicit
+# hash for several reasons:
+# - I do not need accessors inside the MooX::Struct
+# - MooX::Struct->new() has a true cost -;
+# ---------------------------------------------------------------------------
+our $BLESS_COMMON  = sprintf('%s::%s', __PACKAGE__, 'Common');
+our $BLESS_GENERIC = sprintf('%s::%s', __PACKAGE__, 'Generic');
+sub Common_new {
+  bless(
+        {
+         output   =>    '',
+         scheme   => undef,
+         opaque   =>    '',
+         fragment => undef
+        },
+        $BLESS_COMMON
+       )
+}
+sub Generic_new {
+  bless(
+        {
+         output        => '',
+         scheme        => undef,
+         opaque        => '',
+         fragment      => undef,
+         hier_part     => undef,
+         query         => undef,
+         segment       => undef,
+         authority     => undef,
+         path          =>    '', # Never undef per construction
+         relative_ref  => undef,
+         relative_part => undef,
+         userinfo      => undef,
+         host          => undef,
+         port          => undef,
+         ip_literal    => undef,
+         ipv4_address  => undef,
+         reg_name      => undef,
+         ipv6_address  => undef,
+         ipv6_addrz    => undef,
+         ipvfuture     => undef,
+         zoneid        => undef,
+         segments      => $setup->uri_compat ? [''] : []
+        },
+        $BLESS_GENERIC
+       )
+}
+sub Generic_check { blessed($_[0]) eq $BLESS_GENERIC }
 
 # -------------------------------------------
 # The three structures we maintain internally
@@ -141,10 +194,6 @@ sub canonical  { goto &normalized }
 # We want parsing to happen immedately AFTER object was built and then at
 # every input reconstruction
 # =======================================================================
-our $SETUP_PACKAGE;
-BEGIN {
-  $SETUP_PACKAGE = 'MarpaX::Role::Parameterized::ResourceIdentifier::Setup';
-}
 our $check_BUILDARGS      = compile(StringLike|HashRef);
 our $check_BUILDARGS_Dict = compile(slurpy Dict[
                                                 input                           => Optional[StringLike],
@@ -159,8 +208,8 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
 # -------------
 use overload (
               '""'     => sub { $_[0]->raw },
-              '=='     => sub { $SETUP_PACKAGE->new->uri_compat ?  _obj_eq(@_) : $_[0]->normalized eq $_[1]->normalized },
-              '!='     => sub { $SETUP_PACKAGE->new->uri_compat ? !_obj_eq(@_) : $_[0]->normalized ne $_[1]->normalized },
+              '=='     => sub { $setup->uri_compat ?  _obj_eq(@_) : $_[0]->normalized eq $_[1]->normalized },
+              '!='     => sub { $setup->uri_compat ? !_obj_eq(@_) : $_[0]->normalized ne $_[1]->normalized },
               fallback => 1,
              );
 
@@ -204,7 +253,7 @@ sub BUILDARGS {
     }
   }
 
-  if ($SETUP_PACKAGE->new->uri_compat) {
+  if ($setup->uri_compat) {
     #
     # Copy from URI:
     # Get rid of potential wrapping
@@ -307,16 +356,24 @@ role {
   my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
   my $is_common          = $type eq 'common';
   my $__PACKAGE__        = __PACKAGE__;
-  my $setup              = $SETUP_PACKAGE->new;
   #
   # A bnf package must provide correspondance between grammar symbols
   # and fields in a structure, in the form "<xxx>" => yyy.
   # The structure depend on the type: Common or Generic
   #
   my %fields = ();
-  my $struct_class = $is_common ? Common : Generic;
-  my $struct_new = $struct_class->new;
-  my @fields = $struct_new->FIELDS;
+  #
+  # The version using Type:
+  #
+  #  my $struct_class = $is_common ? Common : Generic;
+  #  my $struct_new = $struct_class->new;
+  #  my @fields = $struct_new->FIELDS;
+  #
+  # The version using hashes:
+  #
+  my $struct_ctor = $is_common ? \&Common_new : \&Generic_new;
+  my $struct_new = &$struct_ctor;
+  my @fields = keys %{$struct_new};
   map { $fields{$_} = 0 } @fields;
   while (my ($key, $value) = each %{$mapping}) {
     croak "[$type] symbol $key must be in the form <...>"
@@ -394,12 +451,14 @@ role {
                      my ($self) = @_;
 
                      my $input = $self->input;
-
                      my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
                      #
                      # For performance reason, cache all $self-> accesses
                      #
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
+                     # Version using Type:
+                     # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
+                     # Version using hashes:
+                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { &$struct_ctor } 0.._MAX_STRUCTS];
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
                      local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
                      #
@@ -508,7 +567,7 @@ role {
   # Converted and normalized structures contents should remain internal, not the raw struct
   #
   foreach (@fields) {
-    my $inlined = "\$_[0]->_structs->[$_RAW_STRUCT]->$_";
+    my $inlined = "\$_[0]->_structs->[$_RAW_STRUCT]->{$_}";
     install_modifier($whoami, 'fresh', "_$_"                          => eval "sub { $inlined }" );
   }
   #
@@ -533,7 +592,7 @@ role {
                      my ($self, $base) = @_;
                      croak 'Missing second argument' unless defined $base;
 
-                     my $strict = $SETUP_PACKAGE->new->uri_compat ? (! $URI::ABS_ALLOW_RELATIVE_SCHEME) : 1;
+                     my $strict = $setup->uri_compat ? (! $URI::ABS_ALLOW_RELATIVE_SCHEME) : 1;
                      #
                      # If reference is already absolute, nothing to do if we are in strict mode, or
                      # if self's base is not the same as absolute base
@@ -563,10 +622,18 @@ role {
                      croak "$base is not absolute" unless $base_ri->is_absolute;
 
                      my $self_struct = $self->_structs->[$_RAW_STRUCT];
-                     croak "$self must do the generic syntax" unless Generic->check($self_struct);
+                     #
+                     # Version using Type:
+                     # croak "$self must do the generic syntax" unless Generic->check($self_struct);
+                     # Version using hashes:
+                     croak "$self must do the generic syntax" unless Generic_check($self_struct);
 
                      my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
-                     croak "$base must do the generic syntax" unless Generic->check($base_struct);
+                     #
+                     # Version using Type:
+                     # croak "$base must do the generic syntax" unless Generic->check($base_struct);
+                     # Version using hashes:
+                     croak "$base must do the generic syntax" unless Generic_check($base_struct);
                      my %Base = (
                                  scheme    => $base_struct->{scheme},
                                  authority => $base_struct->{authority},
@@ -660,7 +727,10 @@ IS_ABSOLUTE
     #
     # Do it only if current structure support this component
     #
-    next if ! $struct_new->can($component);
+    # Version using Type:
+    # next if ! $struct_new->can($component);
+    # Version using hashes:
+    next if ! exists $struct_new->{$component};
     #
     # Fields used for recomposition at always limited to scheme+opaque+fragment if:
     # - current component is opaque, or
@@ -671,7 +741,7 @@ my (\$self, \$argument) = \@_;
 #
 # Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
 #
-my \$struct    = $SETUP_PACKAGE->new->uri_compat ? \$_[0]->_normalized_struct : \$_[0]->_raw_struct;
+my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_normalized_struct : \$_[0]->_raw_struct;
 my \$value     = \$struct->{$component};
 return \$value unless defined \$argument;
 #
