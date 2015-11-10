@@ -276,14 +276,14 @@ sub BUILD {
   #
   # Normalize
   #
-  my $normalizer_wrapper_with_accessors = $self->_normalizer_wrapper_with_accessors;
-  do { $normalizer_wrapper_with_accessors->[$_]->($self, '', '') } for 0.._MAX_NORMALIZER;
+  my $normalizer_wrapper_call_lazy_builder = $self->_normalizer_wrapper_call_lazy_builder;
+  do { $normalizer_wrapper_call_lazy_builder->[$_]->($self, '', '') } for 0.._MAX_NORMALIZER;
   #
   # Convert
   #
-  my $converter_wrapper_with_accessors = $self->_converter_wrapper_with_accessors;
+  my $converter_wrapper_call_lazy_builder = $self->_converter_wrapper_call_lazy_builder;
   my $_converter_indice = $self->_converter_indice;
-  $converter_wrapper_with_accessors->[$_converter_indice]->($self, '', '');
+  $converter_wrapper_call_lazy_builder->[$_converter_indice]->($self, '', '');
   #
   # Parse the input
   #
@@ -1007,9 +1007,9 @@ sub _generate_attributes {
               );
   }
 
-  my $_type_names                  = "_${type}_names";
-  my $_type_wrapper                = "_${type}_wrapper";
-  my $_type_wrapper_with_accessors = "_${type}_wrapper_with_accessors";
+  my $_type_names                     = "_${type}_names";
+  my $_type_wrapper                   = "_${type}_wrapper";
+  my $_type_wrapper_call_lazy_builder = "_${type}_wrapper_call_lazy_builder";
   #
   # Just a convenient thing for us
   #
@@ -1029,11 +1029,11 @@ sub _generate_attributes {
                            $_[0]->_build_impl_sub(0, @names)
                          }
                         );
-  has $_type_wrapper_with_accessors => (is => 'ro', isa => ArrayRef[CodeRef|Undef],
+  has $_type_wrapper_call_lazy_builder => (is => 'ro', isa => ArrayRef[CodeRef|Undef],
                                         # lazy => 1,                              Not lazy and this is INTENTIONAL
                                         handles_via => 'Array',
                                         handles => {
-                                                    "_get_${type}_with_accessors" => 'get'
+                                                    "_get_${type}_call_lazy_builder" => 'get'
                                                    },
                                         default => sub {
                                           $_[0]->_build_impl_sub(1, @names)
@@ -1055,13 +1055,13 @@ sub _build_impl_sub {
     # to do extra calls. The $exists and $getter variables are intended
     # for the outside world.
     # The inlined version using these accessors is:
-    my $inlined_with_accessors = <<INLINED_WITH_ACCESSORS;
+    my $inlined_call_lazy_builder = <<INLINED_CALL_LAZY_BUILDER;
   # my (\$self, \$criteria, \$value) = \@_;
   #
   # This is intentionnaly doing NOTHING, but call the builders -;
   #
   \$_[0]->$exists(\$_[1])
-INLINED_WITH_ACCESSORS
+INLINED_CALL_LAZY_BUILDER
     # The inlined version using direct perl op is:
     my $inlined_without_accessors = <<INLINED_WITHOUT_ACCESSORS;
   # my (\$self, \$criteria, \$value) = \@_;
@@ -1072,7 +1072,7 @@ INLINED_WITH_ACCESSORS
   exists(\$_[0]->{$name}->{\$_[1]}) ? goto \$_[0]->{$name}->{\$_[1]} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
     if ($call_builder) {
-      push(@array,eval "sub {$inlined_with_accessors}")
+      push(@array,eval "sub {$inlined_call_lazy_builder}")
     } else {
       push(@array,eval "sub {$inlined_without_accessors}")
     }
