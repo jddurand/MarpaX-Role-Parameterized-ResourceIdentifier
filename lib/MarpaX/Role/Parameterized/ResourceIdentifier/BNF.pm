@@ -593,7 +593,8 @@ role {
   #
   # Avoid a perl warning 'Name "URI::ABS_ALLOW_RELATIVE_SCHEME" used only once: possible typo'
   #
-  my $dummy = $URI::ABS_ALLOW_RELATIVE_SCHEME;
+  my $dummy1 = $URI::ABS_ALLOW_RELATIVE_SCHEME;
+  my $dummy2 = $URI::ABS_REMOTE_LEADING_DOTS;
   #
   # abs(): too complicated to inline
   #
@@ -682,27 +683,32 @@ role {
                      if ((! $strict) && defined($R{scheme}) && defined($Base{scheme}) && ($R{scheme} eq $Base{scheme})) {
                        $R{scheme} = undef;
                      }
+                     #
+                     # Undef by default because it is the role of the method to apply what it think
+                     # is the default
+                     #
+                     my $abs_remote_leading_dots = $setup->uri_compat ? $URI::ABS_REMOTE_LEADING_DOTS : undef;
                      my %T = ();
                      if (defined  $R{scheme}) {
                        $T{scheme}    = $R{scheme};
                        $T{authority} = $R{authority};
-                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $abs_remote_leading_dots);
                        $T{query}     = $R{query};
                      } else {
                        if (defined  $R{authority}) {
                          $T{authority} = $R{authority};
-                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $abs_remote_leading_dots);
                          $T{query}     = $R{query};
                        } else {
                          if (! length($R{path})) {
                            $T{path} = $Base{path};
-                           $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query}
+                           $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query};
                          } else {
                            if (substr($R{path}, 0, 1) eq '/') {
-                             $T{path} = __PACKAGE__->remove_dot_segments($R{path})
+                             $T{path} = __PACKAGE__->remove_dot_segments($R{path}, $abs_remote_leading_dots);
                            } else {
                              $T{path} = __PACKAGE__->_merge(\%Base, \%R);
-                             $T{path} = __PACKAGE__->remove_dot_segments($T{path});
+                             $T{path} = __PACKAGE__->remove_dot_segments($T{path}, $abs_remote_leading_dots);
                            }
                            $T{query} = $R{query};
                          }
@@ -870,7 +876,11 @@ sub _recompose {
 }
 
 sub remove_dot_segments {
-  my ($class, $input) = @_;
+  my ($class, $input, $remote_leading_dots) = @_;
+  #
+  # Support of remote leading dots is TRUE by default as per RFC 3896
+  #
+  $remote_leading_dots //= 1;
   #
   # https://tools.ietf.org/html/rfc3986
   #
@@ -897,12 +907,12 @@ sub remove_dot_segments {
     #    then remove that prefix from the input buffer; otherwise,
     #
     if (index($input, '../') == 0) {
-      substr($input, 0, 3, '')
       # $substep = 'A';
+      substr($input, 0, 3, '')
     }
     elsif (index($input, './') == 0) {
-      substr($input, 0, 2, '')
       # $substep = 'A';
+      substr($input, 0, 2, '')
     }
     #
     # B. if the input buffer begins with a prefix of "/./" or "/.",
@@ -910,12 +920,12 @@ sub remove_dot_segments {
     #    prefix with "/" in the input buffer; otherwise,
     #
     elsif (index($input, '/./') == 0) {
-      substr($input, 0, 3, '/')
       # $substep = 'B';
+      substr($input, 0, 3, '/')
     }
     elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # (?:[\/]|\z) means this is a complete path segment
-      substr($input, 0, 2, '/')
       # $substep = 'B';
+      substr($input, 0, 2, '/')
     }
     #
     # C. if the input buffer begins with a prefix of "/../" or "/..",
@@ -925,22 +935,22 @@ sub remove_dot_segments {
     #    buffer; otherwise,
     #
     elsif (index($input, '/../') == 0) {
+      # $substep = 'C';
       substr($input, 0, 4, '/'),
       $output =~ s/\/?[^\/]*\z//
-      # $substep = 'C';
     }
     elsif ($input =~ /^\/\.\.(?:[\/]|\z)/) {          # (?:[\/]|\z) means this is a complete path segment
+      # $substep = 'C';
       substr($input, 0, 3, '/'),
       $output =~ s/\/?[^\/]*\z//
-      # $substep = 'C';
     }
     #
     # D. if the input buffer consists only of "." or "..", then remove
     #    that from the input buffer; otherwise,
     #
     elsif (($input eq '.') || ($input eq '..')) {
-      $input = ''
       # $substep = 'D';
+      $input = ''
     }
     #
     # E. move the first path segment in the input buffer to the end of
@@ -948,12 +958,10 @@ sub remove_dot_segments {
     #    any) and any subsequent characters up to, but not including,
     #    the next "/" character or the end of the input buffer.
     #
-    #    Note: "or the end of the input buffer" ?
-    #
     else {
+      # $substep = 'E';
       $input =~ /^\/?([^\/]*)/,                           # This will always match
       $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem when $+[0] == $-[0], it will simply do nothing
-      # $substep = 'E';
     }
     # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
   }
