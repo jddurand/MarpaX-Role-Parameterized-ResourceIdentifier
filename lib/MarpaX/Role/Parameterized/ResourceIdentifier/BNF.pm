@@ -148,6 +148,7 @@ has is_character_normalized => ( is => 'rwp', isa => Bool,        default => sub
 #
 # Implementations should 'around' the folllowings
 #
+our @IMPL_EXPLICIT_AROUND = qw/pct_encoded reserved unreserved default_port reg_name_convert_as_domain_name/;
 has pct_encoded                     => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
 has reserved                        => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
 has unreserved                      => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
@@ -190,6 +191,11 @@ sub converted  { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
 # Let's be always URI compatible for the canonical method
 #
 sub canonical  { goto &normalized }
+#
+# as_string returns the perl string
+#
+sub as_string  { goto &raw }
+
 # =======================================================================
 # We want parsing to happen immedately AFTER object was built and then at
 # every input reconstruction
@@ -273,6 +279,12 @@ sub BUILD {
   # Make sure we are calling the lazy builders. This is because
   # the parser is optimized by using explicit hash access to
   # $self
+  #
+  # Parameters that the implementation can around: calling the lazy builders
+  # explicitely is not necessary (the normalizers and converters will trigger
+  # that automatically)
+  #
+  # do { $self->$_ } for @IMPL_EXPLICIT_AROUND;
   #
   # Normalize
   #
@@ -545,7 +557,6 @@ role {
   install_modifier($whoami, 'fresh', 'build_pct_encoded'              => sub { $PARAMS->{pct_encoded} });
   install_modifier($whoami, 'fresh', 'build_reserved'                 => sub {    $PARAMS->{reserved} });
   install_modifier($whoami, 'fresh', 'build_unreserved'               => sub {  $PARAMS->{unreserved} });
-  install_modifier($whoami, 'fresh', 'build_is_character_normalized'  => sub {                    !!1 });
   install_modifier($whoami, 'fresh', 'build_default_port'             => sub {                  undef });
   install_modifier($whoami, 'fresh', 'build_reg_name_convert_as_domain_name'  => sub {                    !!0 });
   foreach (@normalizer_names, @converter_names) {
