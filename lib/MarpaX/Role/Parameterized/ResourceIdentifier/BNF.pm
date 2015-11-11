@@ -715,6 +715,21 @@ role {
                    }
                   );
   #
+  # eq(): inlined and installed once only in the top package
+  #
+  # eq is explicitly comparing canonical versions, where input does
+  # not have to be an object (i.e. this is not using the overload)
+  #
+  my $eq_inlined = <<EQ;
+my (\$self, \$other) = \@_;
+\$self  = $top->new(\$self)  unless blessed \$self;
+\$other = $top->new(\$other) unless blessed \$other;
+croak "\$self should do $__PACKAGE__" unless \$self->does('$__PACKAGE__');
+croak "\$other should do $__PACKAGE__" unless \$other->does('$__PACKAGE__');
+\$self->canonical eq \$other->canonical
+EQ
+  install_modifier($top, 'fresh', eq => eval "sub { $eq_inlined }") unless ($top->can('eq'));
+  #
   # clone(): inlined
   #
   my $clone_inlined = <<CLONE;
