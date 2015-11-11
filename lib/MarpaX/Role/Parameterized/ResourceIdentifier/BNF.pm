@@ -458,7 +458,7 @@ role {
   # Marpa optimisation: we cache the registrations. At every recognizer's value() call
   # the actions are checked. But this is static information in our case
   #
-  install_modifier($whoami, 'fresh', '_parse',
+  install_modifier($whoami, 'fresh', _parse =>
                    sub {
                      my ($self) = @_;
 
@@ -514,7 +514,7 @@ role {
   # Inject the action
   #
   $context{$whoami} = {};
-  install_modifier($whoami, 'fresh', '_action',
+  install_modifier($whoami, 'fresh', _action =>
                    sub {
                      my ($self, @args) = @_;
                      my ($lhs, @rhs) = @{$context{$whoami}->{$Marpa::R2::Context::rule}
@@ -549,18 +549,18 @@ role {
   # -------------------------------------------------------
   # Generate the correct converter direction, used by BUILD
   # -------------------------------------------------------
-  install_modifier($whoami, 'fresh', '_converter_indice' => sub { $converter_indice } );
+  install_modifier($whoami, 'fresh', _converter_indice => sub { $converter_indice } );
 
   # ----------------------------------------------------
   # The builders that the implementation should 'around'
   # ----------------------------------------------------
-  install_modifier($whoami, 'fresh', 'build_pct_encoded'              => sub { $PARAMS->{pct_encoded} });
-  install_modifier($whoami, 'fresh', 'build_reserved'                 => sub {    $PARAMS->{reserved} });
-  install_modifier($whoami, 'fresh', 'build_unreserved'               => sub {  $PARAMS->{unreserved} });
-  install_modifier($whoami, 'fresh', 'build_default_port'             => sub {                  undef });
-  install_modifier($whoami, 'fresh', 'build_reg_name_convert_as_domain_name'  => sub {                    !!0 });
+  install_modifier($whoami, 'fresh', build_pct_encoded                     => sub { $PARAMS->{pct_encoded} });
+  install_modifier($whoami, 'fresh', build_reserved                        => sub {    $PARAMS->{reserved} });
+  install_modifier($whoami, 'fresh', build_unreserved                      => sub {  $PARAMS->{unreserved} });
+  install_modifier($whoami, 'fresh', build_default_port                    => sub {                  undef });
+  install_modifier($whoami, 'fresh', build_reg_name_convert_as_domain_name => sub {                    !!0 });
   foreach (@normalizer_names, @converter_names) {
-    install_modifier($whoami, 'fresh', "build_$_"                     => sub {              return {} });
+    install_modifier($whoami, 'fresh', "build_$_"                          => sub {              return {} });
   }
   # -------------------------------
   # Accessors to structures, fields
@@ -571,20 +571,20 @@ role {
     elsif ($_ == 1) { $what = '_normalized_struct' }
     elsif ($_ == 2) { $what = '_converted_struct'  }
     else            { croak 'Internal error'       }
-    my $inlined = "\$_[0]->_structs->[$_]";
-    install_modifier($whoami, 'fresh', $what                          => eval "sub { $inlined }" );
+    my $inlined = "\$_[0]->{_structs}->[$_]";
+    install_modifier($whoami, 'fresh', $what => eval "sub { $inlined }" );
   }
   #
   # Converted and normalized structures contents should remain internal, not the raw struct
   #
   foreach (@fields) {
-    my $inlined = "\$_[0]->_structs->[$_RAW_STRUCT]->{$_}";
-    install_modifier($whoami, 'fresh', "_$_"                          => eval "sub { $inlined }" );
+    my $inlined = "\$_[0]->{_structs}->[$_RAW_STRUCT]->{$_}";
+    install_modifier($whoami, 'fresh', "_$_" => eval "sub { $inlined }" );
   }
   #
   # List of fields
   #
-  install_modifier($whoami, 'fresh', '__fields'                       => sub { @fields } );
+  install_modifier($whoami, 'fresh', __fields => sub { @fields } );
   #
   # All instance methods. Some of them could have been writen outside of this
   # parameterized role, though they might be a dependency on the $top variable
@@ -597,9 +597,8 @@ role {
   #
   # abs(): too complicated to inline
   #
-  install_modifier($whoami, 'fresh',
-                   'abs' => sub
-                   {
+  install_modifier($whoami, 'fresh', abs =>
+                   sub {
                      my ($self, $base) = @_;
                      croak 'Missing second argument' unless defined $base;
 
@@ -612,7 +611,7 @@ role {
                      if ($self->is_absolute) {
                        return $self if $strict;
                        $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
-                       return $self unless $self->_scheme eq $base_ri->_scheme;
+                       return $self unless $base_ri->is_absolute && ($self->_scheme eq $base_ri->_scheme);
                      }
                      #
                      # https://tools.ietf.org/html/rfc3986
@@ -626,25 +625,28 @@ role {
                      # not appear in the URI reference; the path component is never
                      # undefined, though it may be empty.
                      #
-                     $base_ri //= (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                     if (! defined($base_ri)) {
+                       $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                       #
+                       # This is working only if $base is absolute
+                       #
+                       croak "$base is not absolute" unless $base_ri->is_absolute;
+                     }
                      #
-                     # This work only if $base is absolute and ($self, $base) support the generic syntax
-                     #
-                     croak "$base is not absolute" unless $base_ri->is_absolute;
-
-                     my $self_struct = $self->_structs->[$_RAW_STRUCT];
-                     #
-                     # Version using Type:
-                     # croak "$self must do the generic syntax" unless Generic->check($self_struct);
-                     # Version using hashes:
-                     croak "$self must do the generic syntax" unless Generic_check($self_struct);
-
+                     # This is working only if $self and $base the generic syntax
+                     my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
                      my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
                      #
                      # Version using Type:
+                     # croak "$self must do the generic syntax" unless Generic->check($self_struct);
                      # croak "$base must do the generic syntax" unless Generic->check($base_struct);
+                     #
                      # Version using hashes:
+                     croak "$self must do the generic syntax" unless Generic_check($self_struct);
                      croak "$base must do the generic syntax" unless Generic_check($base_struct);
+                     #
+                     # Do the transformation
+                     #
                      my %Base = (
                                  scheme    => $base_struct->{scheme},
                                  authority => $base_struct->{authority},
