@@ -626,25 +626,21 @@ role {
                      # not appear in the URI reference; the path component is never
                      # undefined, though it may be empty.
                      #
-                     if (! defined($base_ri)) {
-                       $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
-                       #
-                       # This is working only if $base is absolute
-                       #
-                       croak "$base is not absolute" unless $base_ri->is_absolute;
-                     }
+                     $base_ri //= (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                     #
+                     # This is working only if $base is absolute
+                     #
+                     return $self unless $base_ri->is_absolute;
                      #
                      # This is working only if $self and $base the generic syntax
                      my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
                      my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
                      #
                      # Version using Type:
-                     # croak "$self must do the generic syntax" unless Generic->check($self_struct);
-                     # croak "$base must do the generic syntax" unless Generic->check($base_struct);
+                     # croak "$self must do the generic syntax" unless Generic->check($self_struct) && Generic->check($base_struct);
                      #
                      # Version using hashes:
-                     croak "$self must do the generic syntax" unless Generic_check($self_struct);
-                     croak "$base must do the generic syntax" unless Generic_check($base_struct);
+                     return $self unless Generic_check($self_struct) && Generic_check($base_struct);
                      #
                      # Do the transformation
                      #
