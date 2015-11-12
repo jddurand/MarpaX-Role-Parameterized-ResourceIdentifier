@@ -921,7 +921,7 @@ sub remove_dot_segments {
       # $substep = 'B';
       substr($input, 0, 3, '/')
     }
-    elsif ($input =~ /^\/\.(?:[\/]|\z)/) {            # (?:[\/]|\z) means this is a complete path segment
+    elsif ($input =~ /^\/\.(?:\/|\z)/) {            # (?:\/|\z) means this is a complete path segment
       # $substep = 'B';
       substr($input, 0, 2, '/')
     }
@@ -938,7 +938,7 @@ sub remove_dot_segments {
       substr($input, 0, 4, '/'),
       $output =~ s/\/?[^\/]*\z//
     }
-    elsif ($input =~ /^\/\.\.(?:[\/]|\z)/) {          # (?:[\/]|\z) means this is a complete path segment
+    elsif ($input =~ /^\/\.\.(?:\/|\z)/) {          # (?:\/|\z) means this is a complete path segment
       # $substep = 'C';
       push(@remote_leading_dots, '..'),
       substr($input, 0, 3, '/'),
