@@ -872,11 +872,11 @@ sub _recompose {
 }
 
 sub remove_dot_segments {
-  my ($class, $input, $remote_leading_dots) = @_;
+  my ($class, $input, $eat_remote_leading_dots) = @_;
   #
-  # Support of remote leading dots is TRUE by default as per RFC 3896
+  # Support of remote leading dots is TRUE by default as per RFC 3986
   #
-  $remote_leading_dots //= 1;
+  $eat_remote_leading_dots //= 1;
   #
   # https://tools.ietf.org/html/rfc3986
   #
@@ -887,6 +887,7 @@ sub remove_dot_segments {
   # string.
   #
   my $output = '';
+  my @remote_leading_dots = ();      # Track remote leading dots in excess
 
   # my $i = 0;
   # my $step = ++$i;
@@ -904,6 +905,7 @@ sub remove_dot_segments {
     #
     if (index($input, '../') == 0) {
       # $substep = 'A';
+      push(@remote_leading_dots, '..'),
       substr($input, 0, 3, '')
     }
     elsif (index($input, './') == 0) {
@@ -932,11 +934,13 @@ sub remove_dot_segments {
     #
     elsif (index($input, '/../') == 0) {
       # $substep = 'C';
+      push(@remote_leading_dots, '..'),
       substr($input, 0, 4, '/'),
       $output =~ s/\/?[^\/]*\z//
     }
     elsif ($input =~ /^\/\.\.(?:[\/]|\z)/) {          # (?:[\/]|\z) means this is a complete path segment
       # $substep = 'C';
+      push(@remote_leading_dots, '..'),
       substr($input, 0, 3, '/'),
       $output =~ s/\/?[^\/]*\z//
     }
@@ -944,8 +948,13 @@ sub remove_dot_segments {
     # D. if the input buffer consists only of "." or "..", then remove
     #    that from the input buffer; otherwise,
     #
-    elsif (($input eq '.') || ($input eq '..')) {
+    elsif ($input eq '.') {
       # $substep = 'D';
+      $input = ''
+    }
+    elsif ($input eq '..') {
+      # $substep = 'D';
+      push(@remote_leading_dots, '..'),
       $input = ''
     }
     #
@@ -956,6 +965,7 @@ sub remove_dot_segments {
     #
     else {
       # $substep = 'E';
+      pop(@remote_leading_dots),
       $input =~ /^\/?([^\/]*)/,                           # This will always match
       $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem when $+[0] == $-[0], it will simply do nothing
     }
@@ -965,7 +975,7 @@ sub remove_dot_segments {
   # 3. Finally, the output buffer is returned as the result of
   #    remove_dot_segments.
   #
-  $output
+  (! $eat_remote_leading_dots && @remote_leading_dots) ? '/' . join('/', @remote_leading_dots) . $output : $output
 }
 
 sub unescape {
