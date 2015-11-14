@@ -148,12 +148,14 @@ has is_character_normalized => ( is => 'rwp', isa => Bool,        default => sub
 #
 # Implementations should 'around' the folllowings
 #
-our @IMPL_EXPLICIT_AROUND = qw/pct_encoded reserved unreserved default_port reg_name_convert_as_domain_name/;
+our @IMPL_EXPLICIT_AROUND = qw/pct_encoded reserved unreserved default_port reg_name_convert_as_domain_name current_location parent_location/;
 has pct_encoded                     => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
 has reserved                        => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
 has unreserved                      => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
 has default_port                    => ( is => 'ro',  isa => Int|Undef,   lazy => 1, builder => 'build_default_port' );
 has reg_name_convert_as_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_convert_as_domain_name' );
+has current_location                => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_current_location' );
+has parent_location                 => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_parent_location' );
 __PACKAGE__->_generate_attributes('normalizer', @normalizer_names);
 __PACKAGE__->_generate_attributes('converter',  @converter_names);
 
@@ -207,7 +209,9 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
                                                 encoding                        => Optional[Str],
                                                 decode_strategy                 => Optional[Any],
                                                 is_character_normalized         => Optional[Bool],
-                                                reg_name_convert_as_domain_name => Optional[Bool]
+                                                reg_name_convert_as_domain_name => Optional[Bool],
+                                                current_location                => Optional[Str],
+                                                parent_location                 => Optional[Str]
                                                ]);
 # -------------
 # The overloads
@@ -559,6 +563,13 @@ role {
   install_modifier($whoami, 'fresh', build_unreserved                      => sub {  $PARAMS->{unreserved} });
   install_modifier($whoami, 'fresh', build_default_port                    => sub {                  undef });
   install_modifier($whoami, 'fresh', build_reg_name_convert_as_domain_name => sub {                    !!0 });
+  if ($is_common) {
+    install_modifier($whoami, 'fresh', build_current_location              => sub {                  undef });
+    install_modifier($whoami, 'fresh', build_parent_location               => sub {                  undef });
+  } else {
+    install_modifier($whoami, 'fresh', build_current_location              => sub {                    '.' });
+    install_modifier($whoami, 'fresh', build_parent_location               => sub {                   '..' });
+  }
   foreach (@normalizer_names, @converter_names) {
     install_modifier($whoami, 'fresh', "build_$_"                          => sub {              return {} });
   }
@@ -595,6 +606,132 @@ role {
   #
   my $dummy1 = $URI::ABS_ALLOW_RELATIVE_SCHEME;
   my $dummy2 = $URI::ABS_REMOTE_LEADING_DOTS;
+  #
+  # remove_dot_segments: meaningful only for the generic syntax
+  #
+  if ($is_common) {
+    install_modifier($whoami, 'fresh', remove_dot_segments => sub {
+                       my ($self, $input, $ignore_leading_dots) = @_;
+                       $input
+                     }
+                    );
+  } else {
+    install_modifier($whoami, 'fresh', remove_dot_segments => sub {
+                       my ($self, $input, $ignore_leading_dots) = @_;
+                       #
+                       # https://tools.ietf.org/html/rfc3986
+                       #
+                       # 5.2.4.  Remove Dot Segments
+                       #
+                       # 1.  The input buffer is initialized with the now-appended path
+                       # components and the output buffer is initialized to the empty
+                       # string.
+                       #
+                       my $output = '';
+
+                       # my $i = 0;
+                       # my $step = ++$i;
+                       # my $substep = '';
+                       # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER (ignore_leading_dots ? " . ($ignore_leading_dots ? "yes" : "no") . ")";
+                       # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+                       # $step = ++$i;
+                       #
+                       # 2.  While the input buffer is not empty, loop as follows:
+                       #
+                       my $A1 = $self->parent_location . '/';
+                       my $A2 = $self->current_location . '/';
+
+                       my $B1 = '/' . $self->current_location . '/';
+                       my $B2 = '/' . $self->current_location;
+                       my $B2_RE = quotemeta($B2);
+
+                       my $C1 = '/' . $self->parent_location . '/';
+                       my $C2 = '/' . $self->parent_location;
+                       my $C2_RE = quotemeta($C2);
+
+                       my $D1 = $self->current_location;
+                       my $D2 = $self->parent_location;
+
+                       while (length($input)) {
+                         #
+                         # A. If the input buffer begins with a prefix of "../" or "./",
+                         #    then remove that prefix from the input buffer; otherwise,
+                         #
+                         if (index($input, $A1) == 0) {
+                           # $substep = 'A1';
+                           substr($input, 0, length($A1), '')
+                         }
+                         elsif (index($input, $A2) == 0) {
+                           # $substep = 'A2';
+                           substr($input, 0, length($A2), '')
+                         }
+                         #
+                         # B. if the input buffer begins with a prefix of "/./" or "/.",
+                         #    where "." is a complete path segment, then replace that
+                         #    prefix with "/" in the input buffer; otherwise,
+                         #
+                         elsif (index($input, $B1) == 0) {
+                           # $substep = 'B1';
+                           substr($input, 0, length($B1), '/')
+                         }
+                         elsif ($input =~ /^$B2_RE(?:\/|\z)/) {            # (?:\/|\z) means this is a complete path segment
+                           # $substep = 'B2';
+                           substr($input, 0, length($B2), '/')
+                         }
+                         #
+                         # C. if the input buffer begins with a prefix of "/../" or "/..",
+                         #    where ".." is a complete path segment, then replace that
+                         #    prefix with "/" in the input buffer and remove the last
+                         #    segment and its preceding "/" (if any) from the output
+                         #    buffer; otherwise,
+                         #
+                         elsif (index($input, $C1) == 0) {
+                           # $substep = 'C1';
+                           substr($input, 0, length($C1), '/'), $output =~ s/\/?[^\/]*\z//
+                         }
+                         elsif ($input =~ /^$C2_RE(?:\/|\z)/) {          # (?:\/|\z) means this is a complete path segment
+                           # $substep = 'C2';
+                           substr($input, 0, length($C2), '/'), $output =~ s/\/?[^\/]*\z//
+                         }
+                         #
+                         # D. if the input buffer consists only of "." or "..", then remove
+                         #    that from the input buffer; otherwise,
+                         #
+                         elsif ($input eq $D1) {
+                           # $substep = 'D1';
+                           $input = ''
+                         }
+                         elsif ($input eq $D2) {
+                           # $substep = 'D2';
+                           $input = ''
+                         }
+                         #
+                         # E. move the first path segment in the input buffer to the end of
+                         #    the output buffer, including the initial "/" character (if
+                         #    any) and any subsequent characters up to, but not including,
+                         #    the next "/" character or the end of the input buffer.
+                         #
+                         else {
+                           # $substep = 'E';
+                           #
+                           # Notes:
+                           # - the regexp match
+                           # - perl has no problem when $+[0] == $-[0], it will simply do nothing
+                           #
+                           $input =~ /^\/?([^\/]*)/, $output .= substr($input, $-[0], $+[0] - $-[0], '')
+                         }
+                         # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+                       }
+                       #
+                       # 3. Finally, the output buffer is returned as the result of
+                       #    remove_dot_segments.
+                       #
+                       $output
+                     }
+                    )
+  }
+
+
   #
   # rel(): too complicated to inline
   #
@@ -657,15 +794,20 @@ role {
                      #
                      return $self unless $base_ri->is_absolute;
                      #
-                     # This is working only if $self and $base the generic syntax
+                     # The rest will work only if self and base share the same notions of
+                     # current_location and parent_location
+                     #
+                     return $self unless
+                       defined($self->current_location)    && defined($self->parent_location)    &&
+                       defined($base_ri->current_location) && defined($base_ri->parent_location) &&
+                       $self->current_location eq $base_ri->current_location                     &&
+                       $self->parent_location  eq $base_ri->parent_location
+                       ;
+                     #
+                     # Get raw parsing results
+                     #
                      my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
                      my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
-                     #
-                     # Version using Type:
-                     # croak "$self must do the generic syntax" unless Generic->check($self_struct) && Generic->check($base_struct);
-                     #
-                     # Version using hashes:
-                     return $self unless Generic_check($self_struct) && Generic_check($base_struct);
                      #
                      # Do the transformation
                      #
@@ -712,12 +854,12 @@ role {
                      if (defined  $R{scheme}) {
                        $T{scheme}    = $R{scheme};
                        $T{authority} = $R{authority};
-                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $ignore_leading_dots);
+                       $T{path}      = $self->remove_dot_segments($R{path}, $ignore_leading_dots);
                        $T{query}     = $R{query};
                      } else {
                        if (defined  $R{authority}) {
                          $T{authority} = $R{authority};
-                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $ignore_leading_dots);
+                         $T{path}      = $self->remove_dot_segments($R{path}, $ignore_leading_dots);
                          $T{query}     = $R{query};
                        } else {
                          if (! length($R{path})) {
@@ -725,10 +867,10 @@ role {
                            $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query};
                          } else {
                            if (substr($R{path}, 0, 1) eq '/') {
-                             $T{path} = __PACKAGE__->remove_dot_segments($R{path}, $ignore_leading_dots);
+                             $T{path} = $self->remove_dot_segments($R{path}, $ignore_leading_dots);
                            } else {
                              $T{path} = __PACKAGE__->_merge(\%Base, \%R);
-                             $T{path} = __PACKAGE__->remove_dot_segments($T{path}, $ignore_leading_dots);
+                             $T{path} = $self->remove_dot_segments($T{path}, $ignore_leading_dots);
                            }
                            $T{query} = $R{query};
                          }
@@ -893,103 +1035,6 @@ sub _recompose {
   $result .= '#'  . $T->{fragment}     if (defined $T->{fragment});
 
   $result
-}
-
-sub remove_dot_segments {
-  my ($class, $input, $ignore_leading_dots) = @_;
-  #
-  # https://tools.ietf.org/html/rfc3986
-  #
-  # 5.2.4.  Remove Dot Segments
-  #
-  # 1.  The input buffer is initialized with the now-appended path
-  # components and the output buffer is initialized to the empty
-  # string.
-  #
-  my $output = '';
-
-  # my $i = 0;
-  # my $step = ++$i;
-  # my $substep = '';
-  # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER (ignore_leading_dots ? " . ($ignore_leading_dots ? "yes" : "no") . ")";
-  # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
-  # $step = ++$i;
-  #
-  # 2.  While the input buffer is not empty, loop as follows:
-  #
-  while (length($input)) {
-    #
-    # A. If the input buffer begins with a prefix of "../" or "./",
-    #    then remove that prefix from the input buffer; otherwise,
-    #
-    if (index($input, '../') == 0) {
-      # $substep = 'A';
-      substr($input, 0, 3, '')
-    }
-    elsif (index($input, './') == 0) {
-      # $substep = 'A';
-      substr($input, 0, 2, '')
-    }
-    #
-    # B. if the input buffer begins with a prefix of "/./" or "/.",
-    #    where "." is a complete path segment, then replace that
-    #    prefix with "/" in the input buffer; otherwise,
-    #
-    elsif (index($input, '/./') == 0) {
-      # $substep = 'B';
-      substr($input, 0, 3, '/')
-    }
-    elsif ($input =~ /^\/\.(?:\/|\z)/) {            # (?:\/|\z) means this is a complete path segment
-      # $substep = 'B';
-      substr($input, 0, 2, '/')
-    }
-    #
-    # C. if the input buffer begins with a prefix of "/../" or "/..",
-    #    where ".." is a complete path segment, then replace that
-    #    prefix with "/" in the input buffer and remove the last
-    #    segment and its preceding "/" (if any) from the output
-    #    buffer; otherwise,
-    #
-    elsif (index($input, '/../') == 0) {
-      # $substep = 'C';
-      substr($input, 0, 4, '/'),
-      $output =~ s/\/?[^\/]*\z//
-    }
-    elsif ($input =~ /^\/\.\.(?:\/|\z)/) {          # (?:\/|\z) means this is a complete path segment
-      # $substep = 'C';
-      substr($input, 0, 3, '/'),
-      $output =~ s/\/?[^\/]*\z//
-    }
-    #
-    # D. if the input buffer consists only of "." or "..", then remove
-    #    that from the input buffer; otherwise,
-    #
-    elsif ($input eq '.') {
-      # $substep = 'D';
-      $input = ''
-    }
-    elsif ($input eq '..') {
-      # $substep = 'D';
-      $input = ''
-    }
-    #
-    # E. move the first path segment in the input buffer to the end of
-    #    the output buffer, including the initial "/" character (if
-    #    any) and any subsequent characters up to, but not including,
-    #    the next "/" character or the end of the input buffer.
-    #
-    else {
-      # $substep = 'E';
-      $input =~ /^\/?([^\/]*)/,                           # This will always match
-      $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem when $+[0] == $-[0], it will simply do nothing
-    }
-    # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
-  }
-  #
-  # 3. Finally, the output buffer is returned as the result of
-  #    remove_dot_segments.
-  #
-  $output
 }
 
 sub unescape {
