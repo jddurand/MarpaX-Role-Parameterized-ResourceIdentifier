@@ -594,7 +594,6 @@ role {
   # Avoid a perl warning 'Name "URI::ABS_ALLOW_RELATIVE_SCHEME" used only once: possible typo'
   #
   my $dummy1 = $URI::ABS_ALLOW_RELATIVE_SCHEME;
-  my $dummy2 = $URI::ABS_REMOTE_LEADING_DOTS;
   #
   # abs(): too complicated to inline
   #
@@ -683,17 +682,16 @@ role {
                      # Undef by default because it is the role of the method to apply what it think
                      # is the default
                      #
-                     my $abs_remote_leading_dots = $setup->uri_compat ? $URI::ABS_REMOTE_LEADING_DOTS : undef;
                      my %T = ();
                      if (defined  $R{scheme}) {
                        $T{scheme}    = $R{scheme};
                        $T{authority} = $R{authority};
-                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $abs_remote_leading_dots);
+                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
                        $T{query}     = $R{query};
                      } else {
                        if (defined  $R{authority}) {
                          $T{authority} = $R{authority};
-                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $abs_remote_leading_dots);
+                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
                          $T{query}     = $R{query};
                        } else {
                          if (! length($R{path})) {
@@ -701,10 +699,10 @@ role {
                            $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query};
                          } else {
                            if (substr($R{path}, 0, 1) eq '/') {
-                             $T{path} = __PACKAGE__->remove_dot_segments($R{path}, $abs_remote_leading_dots);
+                             $T{path} = __PACKAGE__->remove_dot_segments($R{path});
                            } else {
                              $T{path} = __PACKAGE__->_merge(\%Base, \%R);
-                             $T{path} = __PACKAGE__->remove_dot_segments($T{path}, $abs_remote_leading_dots);
+                             $T{path} = __PACKAGE__->remove_dot_segments($T{path});
                            }
                            $T{query} = $R{query};
                          }
@@ -872,11 +870,9 @@ sub _recompose {
 }
 
 sub remove_dot_segments {
-  my ($class, $input, $eat_remote_leading_dots) = @_;
+  my ($class, $input) = @_;
   #
-  # Support of remote leading dots is TRUE by default as per RFC 3986
-  #
-  $eat_remote_leading_dots //= 1;
+  # Support of remote leading dots is not yet implemented
   #
   # https://tools.ietf.org/html/rfc3986
   #
@@ -887,7 +883,6 @@ sub remove_dot_segments {
   # string.
   #
   my $output = '';
-  my @remote_leading_dots = ();      # Track remote leading dots in excess
 
   # my $i = 0;
   # my $step = ++$i;
@@ -905,7 +900,6 @@ sub remove_dot_segments {
     #
     if (index($input, '../') == 0) {
       # $substep = 'A';
-      push(@remote_leading_dots, '..'),
       substr($input, 0, 3, '')
     }
     elsif (index($input, './') == 0) {
@@ -934,13 +928,11 @@ sub remove_dot_segments {
     #
     elsif (index($input, '/../') == 0) {
       # $substep = 'C';
-      push(@remote_leading_dots, '..'),
       substr($input, 0, 4, '/'),
       $output =~ s/\/?[^\/]*\z//
     }
     elsif ($input =~ /^\/\.\.(?:\/|\z)/) {          # (?:\/|\z) means this is a complete path segment
       # $substep = 'C';
-      push(@remote_leading_dots, '..'),
       substr($input, 0, 3, '/'),
       $output =~ s/\/?[^\/]*\z//
     }
@@ -954,7 +946,6 @@ sub remove_dot_segments {
     }
     elsif ($input eq '..') {
       # $substep = 'D';
-      push(@remote_leading_dots, '..'),
       $input = ''
     }
     #
@@ -965,7 +956,6 @@ sub remove_dot_segments {
     #
     else {
       # $substep = 'E';
-      pop(@remote_leading_dots),
       $input =~ /^\/?([^\/]*)/,                           # This will always match
       $output .= substr($input, $-[0], $+[0] - $-[0], '') # Note that perl has no problem when $+[0] == $-[0], it will simply do nothing
     }
@@ -975,7 +965,7 @@ sub remove_dot_segments {
   # 3. Finally, the output buffer is returned as the result of
   #    remove_dot_segments.
   #
-  (! $eat_remote_leading_dots && @remote_leading_dots) ? '/' . join('/', @remote_leading_dots) . $output : $output
+  $output
 }
 
 sub unescape {
