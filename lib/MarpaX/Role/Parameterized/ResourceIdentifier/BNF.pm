@@ -594,15 +594,41 @@ role {
   # Avoid a perl warning 'Name "URI::ABS_ALLOW_RELATIVE_SCHEME" used only once: possible typo'
   #
   my $dummy1 = $URI::ABS_ALLOW_RELATIVE_SCHEME;
+  my $dummy2 = $URI::ABS_REMOTE_LEADING_DOTS;
   #
-  # abs(): too complicated to inline
+  # rel(): too complicated to inline
+  #
+  install_modifier($whoami, 'fresh', rel =>
+                   $is_common ?
+                   #
+                   # rel() on the common syntax is a no-op, we return $self
+                   #
+                   sub { $_[0] }
+                   :
+                   #
+                   # rel() on the generic syntax TODO
+                   #
+                   sub { $_[0] }
+                  );
+  #
+  # abs(): ditto
   #
   install_modifier($whoami, 'fresh', abs =>
+                   $is_common ?
+                   #
+                   # abs() on the common syntax is a no-op, we return $self
+                   #
+                   sub { $_[0] }
+                   :
+                   #
+                   # abs() on the generic syntax is ok
+                   #
                    sub {
                      my ($self, $base) = @_;
                      croak 'Missing second argument' unless defined $base;
 
-                     my $strict = $setup->uri_compat ? (! $URI::ABS_ALLOW_RELATIVE_SCHEME) : 1;
+                     my $strict              = $setup->uri_compat ? (! $URI::ABS_ALLOW_RELATIVE_SCHEME) : 1;
+                     my $ignore_leading_dots = $setup->uri_compat ?    $URI::ABS_REMOTE_LEADING_DOTS    : $setup->abs_remote_leading_dots;
                      #
                      # If reference is already absolute, nothing to do if we are in strict mode, or
                      # if self's base is not the same as absolute base
@@ -686,12 +712,12 @@ role {
                      if (defined  $R{scheme}) {
                        $T{scheme}    = $R{scheme};
                        $T{authority} = $R{authority};
-                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+                       $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $ignore_leading_dots);
                        $T{query}     = $R{query};
                      } else {
                        if (defined  $R{authority}) {
                          $T{authority} = $R{authority};
-                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path});
+                         $T{path}      = __PACKAGE__->remove_dot_segments($R{path}, $ignore_leading_dots);
                          $T{query}     = $R{query};
                        } else {
                          if (! length($R{path})) {
@@ -699,10 +725,10 @@ role {
                            $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query};
                          } else {
                            if (substr($R{path}, 0, 1) eq '/') {
-                             $T{path} = __PACKAGE__->remove_dot_segments($R{path});
+                             $T{path} = __PACKAGE__->remove_dot_segments($R{path}, $ignore_leading_dots);
                            } else {
                              $T{path} = __PACKAGE__->_merge(\%Base, \%R);
-                             $T{path} = __PACKAGE__->remove_dot_segments($T{path});
+                             $T{path} = __PACKAGE__->remove_dot_segments($T{path}, $ignore_leading_dots);
                            }
                            $T{query} = $R{query};
                          }
@@ -823,7 +849,7 @@ sub _merge {
   # path, then return a string consisting of "/" concatenated with the
   # reference's path; otherwise,
   #
-  if (! Undef->check($base->{authority}) && ! length($base->{path})) {
+  if (defined($base->{authority}) && ! length($base->{path})) {
     return '/' . $ref->{path};
   }
   #
@@ -870,9 +896,7 @@ sub _recompose {
 }
 
 sub remove_dot_segments {
-  my ($class, $input) = @_;
-  #
-  # Support of remote leading dots is not yet implemented
+  my ($class, $input, $ignore_leading_dots) = @_;
   #
   # https://tools.ietf.org/html/rfc3986
   #
@@ -887,7 +911,7 @@ sub remove_dot_segments {
   # my $i = 0;
   # my $step = ++$i;
   # my $substep = '';
-  # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER";
+  # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER (ignore_leading_dots ? " . ($ignore_leading_dots ? "yes" : "no") . ")";
   # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
   # $step = ++$i;
   #
