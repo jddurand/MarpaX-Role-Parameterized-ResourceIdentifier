@@ -16,6 +16,7 @@ use Module::Runtime qw/use_module is_module_name/;
 use Scalar::Util qw/blessed/;
 use Try::Tiny;
 
+our $scheme_re = qr/^[A-Za-z][A-Za-z0-9.+-]*(?=:)/;
 our $setup  = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
 
 sub _new_from_specific {
@@ -79,15 +80,24 @@ sub _new_from_common {
 }
 
 sub new {
-  my ($class, $args) = (shift, shift);
+  my ($class, $args, $next) = @_;
   #
-  # scheme argument ?
+  # scheme argument ? The original logic of URI is ok for me.
   #
+  my $scheme;
+  if ((! ref($args)) && (my $stringified_args = "$args") =~ $scheme_re) {
+    $scheme = substr($stringified_args, $-[0], $+[0] - $-[0])
+  }
+  $scheme = $next->scheme if (! defined($scheme)) && blessed($next) && $next->can('scheme');
+  if ((! defined($scheme)) && (defined($next)) && (! ref($next)) && (my $stringified_next = "$next") =~ $scheme_re) {
+    $scheme = substr($stringified_next, $-[0], $+[0] - $-[0])
+  }
+
   my $self;
 
-  $self = $class->_new_from_specific($args, @_) if (@_);
-  $self = $class->_new_from_generic ($args)     unless blessed($self);
-  $self = $class->_new_from_common  ($args)     unless blessed($self);
+  $self = $class->_new_from_specific($args, $scheme) if defined $scheme;
+  $self = $class->_new_from_generic ($args)          unless blessed($self);
+  $self = $class->_new_from_common  ($args)          unless blessed($self);
 
   $self
 }
