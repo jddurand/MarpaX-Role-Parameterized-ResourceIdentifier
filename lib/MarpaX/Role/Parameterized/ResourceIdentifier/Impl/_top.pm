@@ -22,10 +22,11 @@ our $setup  = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
 sub _new_from_specific {
   my ($class, $args, $scheme) = @_;
 
+  my $impl_dirname          = $setup->impl_dirname;
   my $plugins_dirname       = $setup->plugins_dirname;
   my $can_scheme_methodname = $setup->can_scheme_methodname;
 
-  my $plugins_namespace     = sprintf('%s::%s', $class, $plugins_dirname);
+  my $plugins_namespace     = sprintf('%s::%s::%s', $class, $impl_dirname, $plugins_dirname);
 
   my $self;
 
@@ -56,7 +57,9 @@ sub _new_from_specific {
 sub _new_from_generic {
   my ($class, $args) = @_;
 
-  my $subclass = sprintf('%s::%s', $class, '_generic');
+  my $impl_dirname = $setup->impl_dirname;
+
+  my $subclass = sprintf('%s::%s::%s', $class, $impl_dirname, '_generic');
 
   my $self;
   try {
@@ -73,7 +76,9 @@ sub _new_from_generic {
 sub _new_from_common {
   my ($class, $args) = @_;
 
-  my $subclass = sprintf('%s::%s', $class, '_common');
+  my $impl_dirname = $setup->impl_dirname;
+
+  my $subclass = sprintf('%s::%s::%s', $class, $impl_dirname, '_common');
 
   use_module($subclass);
   $subclass->new($args)

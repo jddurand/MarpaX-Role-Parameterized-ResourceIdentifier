@@ -11,9 +11,13 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 
 use Moo::Role;
 use Unicode::Normalize qw/normalize/;
-
+#
+# Arguments of every callback:
+# my ($self, $field, $value, $lhs) = @_;
+#
 around build_character_normalizer => sub {
   my ($orig, $self) = (shift, shift);
+
   my $rc = $self->$orig(@_);
   #
   # --------------------------------------------

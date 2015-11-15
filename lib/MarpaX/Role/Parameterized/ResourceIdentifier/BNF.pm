@@ -462,58 +462,58 @@ role {
   # Marpa optimisation: we cache the registrations. At every recognizer's value() call
   # the actions are checked. But this is static information in our case
   #
-  install_modifier($whoami, 'fresh', _parse =>
-                   sub {
-                     my ($self) = @_;
+  my $parse = sub {
+    my ($self) = @_;
 
-                     my $input = $self->input;
-                     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
-                     #
-                     # For performance reason, cache all $self-> accesses
-                     #
-                     # Version using Type:
-                     # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
-                     # Version using hashes:
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { &$struct_ctor } 0.._MAX_STRUCTS];
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
-                     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
-                     #
-                     # A very special case is the input itself, before the parsing
-                     # We want to apply eventual normalizers and converters on it.
-                     # To identify this special, $field and $lhs are both the
-                     # empty string, i.e. a situation that can never happen during
-                     # parsing
-                     #
-                     # Normalize
-                     #
-                     do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input) } for 0.._MAX_NORMALIZER;
-                     #
-                     # Convert
-                     #
-                     $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, '', $input);
-                     #
-                     # Parse (may croak)
-                     #
-                     $r->read(\$input);
-                     croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
-                     #
-                     # Check result
-                     #
-                     # Marpa optimisation: we cache the registrations. At every recognizer's value() call
-                     # the actions are checked. But this is static information in our case
-                     #
-                     my $registrations = $registrations{$whoami};
-                     if (defined($registrations)) {
-                       $r->registrations($registrations);
-                     }
-                     my $value_ref = $r->value($self);
-                     if (! defined($registrations)) {
-                       $registrations{$whoami} = $r->registrations();
-                     }
-                     my $value = ${$value_ref};
-                     do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0.._MAX_STRUCTS;
-                   }
-                  );
+    my $input = $self->input;
+    my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+    #
+    # For performance reason, cache all $self-> accesses
+    #
+    # Version using Type:
+    # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
+    # Version using hashes:
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { &$struct_ctor } 0.._MAX_STRUCTS];
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
+    #
+    # A very special case is the input itself, before the parsing
+    # We want to apply eventual normalizers and converters on it.
+    # To identify this special, $field and $lhs are both the
+    # empty string, i.e. a situation that can never happen during
+    # parsing
+    #
+    # Normalize
+    #
+    do { $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, '', $input) } for 0.._MAX_NORMALIZER;
+    #
+    # Convert
+    #
+    $input = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, '', $input);
+    #
+    # Parse (may croak)
+    #
+    $r->read(\$input);
+    croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
+    #
+    # Check result
+    #
+    # Marpa optimisation: we cache the registrations. At every recognizer's value() call
+    # the actions are checked. But this is static information in our case
+    #
+    my $registrations = $registrations{$whoami};
+    if (defined($registrations)) {
+      $r->registrations($registrations);
+    }
+    my $value_ref = $r->value($self);
+    if (! defined($registrations)) {
+      $registrations{$whoami} = $r->registrations();
+    }
+    my $value = ${$value_ref};
+    do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0.._MAX_STRUCTS;
+  };
+  install_modifier($whoami, 'fresh', _parse => $parse);
+
   #
   # Inject the action
   #
@@ -602,22 +602,17 @@ role {
   # at any time in the development of this package. This is why all instance methods
   # are implemented here.
   #
-  # Avoid a perl warning 'Name "URI::ABS_ALLOW_RELATIVE_SCHEME" used only once: possible typo'
-  #
-  my $dummy1 = $URI::ABS_ALLOW_RELATIVE_SCHEME;
-  my $dummy2 = $URI::ABS_REMOTE_LEADING_DOTS;
-  #
   # remove_dot_segments: meaningful only for the generic syntax
   #
   if ($is_common) {
     install_modifier($whoami, 'fresh', remove_dot_segments => sub {
-                       my ($self, $input, $ignore_leading_dots) = @_;
+                       my ($self, $input, $remote_leading_dots) = @_;
                        $input
                      }
                     );
   } else {
     install_modifier($whoami, 'fresh', remove_dot_segments => sub {
-                       my ($self, $input, $ignore_leading_dots) = @_;
+                       my ($self, $input, $remote_leading_dots) = @_;
                        #
                        # https://tools.ietf.org/html/rfc3986
                        #
@@ -627,30 +622,106 @@ role {
                        # components and the output buffer is initialized to the empty
                        # string.
                        #
+                       my $parent_location = $self->parent_location;
+                       my $parent_location_RE = quotemeta($parent_location);
+                       my $current_location = $self->current_location;
+
                        my $output = '';
+                       my $remove_last_segment_in_output = sub {
+                         if (length $output) {
+                           #
+                           # We do not remove last segment if it is already a '..'. This can happen only
+                           # if we do not ignore leading dots
+                           #
+                           return 0 if (! $remote_leading_dots && $output =~ /(?:\A|\/)$parent_location_RE(?:\/|\z)/);
+                           $output =~ s/\/?[^\/]*\/?\z// ? 1 : 0
+                         } else {
+                           0
+                         }
+                       };
+                       my $process_parent_location = sub {
+                         my $removed = &$remove_last_segment_in_output;
+                         #
+                         # when $_[0] is true, this mean there is a trailing '/'
+                         #
+                         if (! $remote_leading_dots & ! $removed) {
+                           #
+                           # If nothing was removed, it is in excess
+                           #
+                           if (length($output) && substr($output, -1, 1) eq '/') {
+                             #
+                             # Output already end with a '/'
+                             #
+                             $output .=       $parent_location;
+                           } else {
+                             $output .= '/' . $parent_location;
+                           }
+                           #
+                           # Push the eventual trailing character
+                           #
+                           $output .= '/' if $_[0];
+                         }
+                       };
+                       my $process_current_location = sub {
+                         #
+                         # when $_[0] is true, this mean there is a trailing '/'
+                         #
+                         if (! $remote_leading_dots) {
+                           if (length($output)) {
+                             if (substr($output, -1, 1) eq '/') {
+                               #
+                               # Output already end with a '/': no op regardless of $_[0]
+                               #
+                             } else {
+                               #
+                               # Output does not end with a '/': add '/' if $_[0]
+                               #
+                               $output .= '/' if $_[0];
+                             }
+                           } else {
+                             #
+                             # Output is empty: no op unless there is a trailing slash, i.e. '/./'
+                             #
+                             $output = '/' . $current_location . '/' if $_[0];
+                           }
+                         }
+                       };
+                       my $process_current_segment = sub {
+                         #
+                         # $_[0] contains the current segment
+                         #
+                         if (length($output) && substr($output, -1, 1) eq '/' && substr($_[0], 0, 1) eq '/') {
+                           #
+                           # segment start with a '/' and output already end with a '/'
+                           #
+                           substr($output, -1, 1, $_[0]);
+                         } else {
+                           $output .= $_[0];
+                         }
+                       };
 
                        # my $i = 0;
                        # my $step = ++$i;
-                       # my $substep = '';
-                       # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER (ignore_leading_dots ? " . ($ignore_leading_dots ? "yes" : "no") . ")";
-                       # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
+                       # my $substep = '';
+                       # printf STDERR "%-10s %-30s %-30s\n", "STEP", "OUTPUT BUFFER", "INPUT BUFFER (remote_leading_dots ? " . ($remote_leading_dots ? "yes" : "no") . ")";
+                       # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
                        # $step = ++$i;
                        #
                        # 2.  While the input buffer is not empty, loop as follows:
                        #
-                       my $A1 = $self->parent_location . '/';
-                       my $A2 = $self->current_location . '/';
+                       my $A1 = $parent_location . '/';
+                       my $A2 = $current_location . '/';
 
-                       my $B1 = '/' . $self->current_location . '/';
-                       my $B2 = '/' . $self->current_location;
+                       my $B1 = '/' . $current_location . '/';
+                       my $B2 = '/' . $current_location;
                        my $B2_RE = quotemeta($B2);
 
-                       my $C1 = '/' . $self->parent_location . '/';
-                       my $C2 = '/' . $self->parent_location;
+                       my $C1 = '/' . $parent_location . '/';
+                       my $C2 = '/' . $parent_location;
                        my $C2_RE = quotemeta($C2);
 
-                       my $D1 = $self->current_location;
-                       my $D2 = $self->parent_location;
+                       my $D1 = $current_location;
+                       my $D2 = $parent_location;
 
                        while (length($input)) {
                          #
@@ -659,11 +730,11 @@ role {
                          #
                          if (index($input, $A1) == 0) {
                            # $substep = 'A1';
-                           substr($input, 0, length($A1), '')
+                           substr($input, 0, length($A1), ''), &$process_parent_location('/')
                          }
                          elsif (index($input, $A2) == 0) {
                            # $substep = 'A2';
-                           substr($input, 0, length($A2), '')
+                           substr($input, 0, length($A2), ''), &$process_current_location('/')
                          }
                          #
                          # B. if the input buffer begins with a prefix of "/./" or "/.",
@@ -672,11 +743,11 @@ role {
                          #
                          elsif (index($input, $B1) == 0) {
                            # $substep = 'B1';
-                           substr($input, 0, length($B1), '/')
+                           substr($input, 0, length($B1), '/'), &$process_current_location('/')
                          }
                          elsif ($input =~ /^$B2_RE(?:\/|\z)/) {            # (?:\/|\z) means this is a complete path segment
                            # $substep = 'B2';
-                           substr($input, 0, length($B2), '/')
+                           substr($input, 0, length($B2), '/'), &$process_current_location
                          }
                          #
                          # C. if the input buffer begins with a prefix of "/../" or "/..",
@@ -687,11 +758,11 @@ role {
                          #
                          elsif (index($input, $C1) == 0) {
                            # $substep = 'C1';
-                           substr($input, 0, length($C1), '/'), $output =~ s/\/?[^\/]*\z//
+                           substr($input, 0, length($C1), '/'), &$process_parent_location('/')
                          }
                          elsif ($input =~ /^$C2_RE(?:\/|\z)/) {          # (?:\/|\z) means this is a complete path segment
                            # $substep = 'C2';
-                           substr($input, 0, length($C2), '/'), $output =~ s/\/?[^\/]*\z//
+                           substr($input, 0, length($C2), '/'), &$process_parent_location
                          }
                          #
                          # D. if the input buffer consists only of "." or "..", then remove
@@ -699,11 +770,11 @@ role {
                          #
                          elsif ($input eq $D1) {
                            # $substep = 'D1';
-                           $input = ''
+                           $input = '', &$process_current_location
                          }
                          elsif ($input eq $D2) {
                            # $substep = 'D2';
-                           $input = ''
+                           $input = '', &$process_parent_location
                          }
                          #
                          # E. move the first path segment in the input buffer to the end of
@@ -715,10 +786,10 @@ role {
                            # $substep = 'E';
                            #
                            # Notes:
-                           # - the regexp match
+                           # - the regexp always match
                            # - perl has no problem when $+[0] == $-[0], it will simply do nothing
                            #
-                           $input =~ /^\/?([^\/]*)/, $output .= substr($input, $-[0], $+[0] - $-[0], '')
+                           $input =~ /^\/?([^\/]*)/, &$process_current_segment(substr($input, $-[0], $+[0] - $-[0], ''));
                          }
                          # printf STDERR "%-10s %-30s %-30s\n", "$step$substep", $output, $input;
                        }
@@ -764,8 +835,8 @@ role {
                      my ($self, $base) = @_;
                      croak 'Missing second argument' unless defined $base;
 
-                     my $strict              = $setup->uri_compat ? (! $URI::ABS_ALLOW_RELATIVE_SCHEME) : 1;
-                     my $ignore_leading_dots = $setup->uri_compat ?    $URI::ABS_REMOTE_LEADING_DOTS    : $setup->abs_remote_leading_dots;
+                     my $strict              = $setup->remove_dot_segments_strict;
+                     my $remote_leading_dots = $setup->abs_remote_leading_dots;
                      #
                      # If reference is already absolute, nothing to do if we are in strict mode, or
                      # if self's base is not the same as absolute base
@@ -854,12 +925,12 @@ role {
                      if (defined  $R{scheme}) {
                        $T{scheme}    = $R{scheme};
                        $T{authority} = $R{authority};
-                       $T{path}      = $self->remove_dot_segments($R{path}, $ignore_leading_dots);
+                       $T{path}      = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                        $T{query}     = $R{query};
                      } else {
                        if (defined  $R{authority}) {
                          $T{authority} = $R{authority};
-                         $T{path}      = $self->remove_dot_segments($R{path}, $ignore_leading_dots);
+                         $T{path}      = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                          $T{query}     = $R{query};
                        } else {
                          if (! length($R{path})) {
@@ -867,10 +938,10 @@ role {
                            $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query};
                          } else {
                            if (substr($R{path}, 0, 1) eq '/') {
-                             $T{path} = $self->remove_dot_segments($R{path}, $ignore_leading_dots);
+                             $T{path} = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                            } else {
                              $T{path} = __PACKAGE__->_merge(\%Base, \%R);
-                             $T{path} = $self->remove_dot_segments($T{path}, $ignore_leading_dots);
+                             $T{path} = $self->remove_dot_segments($T{path}, $remote_leading_dots);
                            }
                            $T{query} = $R{query};
                          }
@@ -885,7 +956,7 @@ role {
                    }
                   );
   #
-  # eq(): inlined and installed once only in the top package
+  # eq(): inlined and installed once only in the impl package
   #
   # eq is explicitly comparing canonical versions, where input does
   # not have to be an object (i.e. this is not using the overload)
@@ -1240,26 +1311,3 @@ BEGIN {
 }
 
 1;
-__DATA__
-                     {
-                       my ($self, $argument) = @_;
-                       #
-                       # Returned value is always the canonical form in uri compat mode
-                       #
-                       my $struct    = $self->uri_compat ? $self->_normalized_struct : $self->_raw_struct;
-                       my $value     = $struct->{$value};
-                       return $value unless defined($argument);
-                       #
-                       # Always reparse
-                       #
-                       my %hash = ();
-                       foreach (@recompose_fields) {
-                         $hash{$_} = ($_ eq $component) ? $argument : $normalized_struct->$_;
-                       }
-                       $_[0] = $top->new(__PACKAGE__->_recompose(\%hash));
-                       #
-                       # Recursively call us but without argument -;
-                       #
-                       $_[0]->$component
-                     }
-                    );
