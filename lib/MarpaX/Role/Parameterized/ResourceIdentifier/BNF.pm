@@ -323,6 +323,7 @@ our $check_params = compile(
                                  spec        => Enum[qw/uri iri/],
                                  top         => Str,
                                  bnf         => Str,
+                                 start       => Str,
                                  reserved    => RegexpRef,
                                  unreserved  => RegexpRef,
                                  pct_encoded => Str|Undef,
@@ -355,6 +356,7 @@ role {
   my $top         = $PARAMS->{top};
   my $bnf         = $PARAMS->{bnf};
   my $mapping     = $PARAMS->{mapping};
+  my $start       = $PARAMS->{start};
 
   #
   # Make sure $whoami package is doing MooX::Role::Logger is not already
@@ -453,7 +455,8 @@ role {
   #
   # Parse method installed directly in the BNF package
   #
-  my $grammar = Marpa::R2::Scanless::G->new({source => \$bnf});
+  my $BNF = "inaccessible is ok by default\n:start ::= $start\n$bnf";
+  my $grammar = Marpa::R2::Scanless::G->new({source => \$BNF});
   my %recognizer_option = (
                            trace_terminals   => $marpa_trace_terminals,
                            trace_values      => $marpa_trace_values,,
