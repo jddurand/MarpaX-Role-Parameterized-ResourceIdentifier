@@ -303,11 +303,11 @@ sub BUILD {
   #
   # Parse the input
   #
-  $self->_parse;
+  $self->parse;
   #
   # And install an after modifier to automatically parse it again at every change
   #
-  after input => sub { $self->_parse }
+  after input => sub { $self->parse }
 }
 # =============================================================================
 # Parameter validation
@@ -512,7 +512,7 @@ role {
     my $value = ${$value_ref};
     do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0.._MAX_STRUCTS;
   };
-  install_modifier($whoami, 'fresh', _parse => $parse);
+  install_modifier($whoami, 'fresh', parse => $parse);
 
   #
   # Inject the action
