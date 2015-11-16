@@ -186,9 +186,12 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 #
 # Internally I use hash notation for performance
 #
-sub raw        { $_[0]->{_structs}->[0]->{$_[1] // 'output'} }
-sub normalized { $_[0]->{_structs}->[1]->{$_[1] // 'output'} }
-sub converted  { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
+sub raw                 { $_[0]->{_structs}->[0]->{$_[1] // 'output'} }
+sub normalized          { $_[0]->{_structs}->[1]->{$_[1] // 'output'} }
+sub converted           { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
+sub normalized_scheme   { $_[0]->{_structs}->[1]->{'scheme'} }
+sub normalized_opaque   { $_[0]->{_structs}->[1]->{'opaque'} }
+sub normalized_fragment { $_[0]->{_structs}->[1]->{'fragment'} }
 #
 # Let's be always URI compatible for the canonical method
 #
