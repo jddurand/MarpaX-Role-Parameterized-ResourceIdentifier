@@ -36,7 +36,7 @@ sub _new_from_specific {
     # We require there is a class method able to answer to this
     # question: $can_scheme_methodname()
     #
-    my $subclass = sprintf('%s::%s', $plugins_namespace, $_);
+    my $subclass = $_;
     try {
       use_module($subclass);
       #
@@ -100,9 +100,9 @@ sub new {
 
   my $self;
 
-  $self = $class->_new_from_specific($args, $scheme) if defined $scheme;
-  $self = $class->_new_from_generic ($args)          unless blessed($self);
-  $self = $class->_new_from_common  ($args)          unless blessed($self);
+  $self = $class->_new_from_specific($args, lc($scheme)) if defined $scheme;
+  $self = $class->_new_from_generic ($args)              unless blessed($self);
+  $self = $class->_new_from_common  ($args)              unless blessed($self);
 
   $self
 }
