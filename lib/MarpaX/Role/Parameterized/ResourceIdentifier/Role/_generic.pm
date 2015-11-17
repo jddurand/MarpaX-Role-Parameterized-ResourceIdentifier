@@ -175,4 +175,6 @@ sub _domain_to_ascii {
   $rc
 }
 
+with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common';
+
 1;
