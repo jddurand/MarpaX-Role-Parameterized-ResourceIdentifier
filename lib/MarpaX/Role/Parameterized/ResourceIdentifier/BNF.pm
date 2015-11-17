@@ -307,10 +307,6 @@ sub BUILD {
   # Parse the input
   #
   $self->parse;
-  #
-  # And install an after modifier to automatically parse it again at every change
-  #
-  after input => sub { $self->parse }
 }
 # =============================================================================
 # Parameter validation
@@ -375,7 +371,7 @@ role {
   my $_RAW_STRUCT        = _RAW_STRUCT;
   my $_NORMALIZED_STRUCT = _NORMALIZED_STRUCT;
   my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
-  my $is_common          = $type eq 'common';
+  my $is_common          = $type eq '_common';
   my $__PACKAGE__        = __PACKAGE__;
   #
   # A bnf package must provide correspondance between grammar symbols
