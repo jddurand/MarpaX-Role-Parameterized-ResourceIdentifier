@@ -39,9 +39,9 @@ our $setup = MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new;
 # - I do not need accessors inside the MooX::Struct
 # - MooX::Struct->new() has a true cost -;
 # ---------------------------------------------------------------------------
-our $BLESS_COMMON  = sprintf('%s::%s', __PACKAGE__, 'Common');
-our $BLESS_GENERIC = sprintf('%s::%s', __PACKAGE__, 'Generic');
-sub Common_new {
+our $BLESS_COMMON  = sprintf('%s::%s', __PACKAGE__, '_common');
+our $BLESS_GENERIC = sprintf('%s::%s', __PACKAGE__, '_generic');
+sub _common_new {
   bless(
         {
          output   =>    '',
@@ -52,7 +52,7 @@ sub Common_new {
         $BLESS_COMMON
        )
 }
-sub Generic_new {
+sub _generic_new {
   bless(
         {
          output        => '',
@@ -319,7 +319,7 @@ our $check_params = compile(
                             slurpy
                             Dict[
                                  whoami      => Str,
-                                 type        => Enum[qw/common generic/],
+                                 type        => Enum[qw/_common _generic/],
                                  spec        => Enum[qw/uri iri/],
                                  top         => Str,
                                  bnf         => Str,
@@ -392,7 +392,7 @@ role {
   #
   # The version using hashes:
   #
-  my $struct_ctor = $is_common ? \&Common_new : \&Generic_new;
+  my $struct_ctor = $is_common ? \&_common_new : \&_generic_new;
   my $struct_new = &$struct_ctor;
   my @fields = keys %{$struct_new};
   map { $fields{$_} = 0 } @fields;
