@@ -100,9 +100,9 @@ sub new {
 
   my $self;
 
-  $self = $class->_new_from_specific($args, lc($scheme)) if defined $scheme;
-  $self = $class->_new_from_generic ($args)              unless blessed($self);
-  $self = $class->_new_from_common  ($args)              unless blessed($self);
+  $self = $class->_new_from_specific($args, $scheme) if defined $scheme;
+  $self = $class->_new_from_generic ($args)          unless blessed($self);
+  $self = $class->_new_from_common  ($args)          unless blessed($self);
 
   $self
 }

@@ -14,7 +14,7 @@ use Moo::Role;
 #
 # Scheme registration
 #
-sub can_scheme { my ($class, $normalized_scheme) = @_; $normalized_scheme eq 'ftp' }
+sub can_scheme { my ($class, $scheme) = @_; $scheme =~ /\Aftp\z/i }
 #
 # Scheme validation
 #
