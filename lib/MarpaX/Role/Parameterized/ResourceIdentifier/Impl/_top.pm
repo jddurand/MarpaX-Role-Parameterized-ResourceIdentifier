@@ -86,6 +86,8 @@ sub _new_from_common {
 
 sub new {
   my ($class, $args, $next) = @_;
+
+  croak 'Missing argument' unless defined $args;
   #
   # scheme argument ? The original logic of URI is ok for me.
   #
