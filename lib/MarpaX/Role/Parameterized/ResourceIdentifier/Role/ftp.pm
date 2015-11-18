@@ -25,11 +25,7 @@ around parse => sub {
   croak 'scheme must be undef or ftp' unless ! defined($normalized_scheme) || $normalized_scheme eq 'ftp';
   @rc
 };
-#
-# Scheme specifics
-#
-#
-# https://tools.ietf.org/html/rfc1738#section-3.2
-#
+
+with 'MarpaX::Role::Parameterized::ResourceIdentifier::Role::_generic';
 
 1;
