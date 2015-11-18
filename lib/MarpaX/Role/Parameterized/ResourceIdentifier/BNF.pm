@@ -324,6 +324,7 @@ our $check_params = compile(
                                  unreserved  => RegexpRef,
                                  pct_encoded => Str|Undef,
                                  mapping     => HashRef[Str],
+                                 extension   => Optional[CodeRef],
                                  _orig_arg   => Optional[Any]
                                 ]
                            );
@@ -352,6 +353,7 @@ role {
   my $top         = $PARAMS->{top};
   my $bnf         = $PARAMS->{bnf};
   my $mapping     = $PARAMS->{mapping};
+  my $extension   = $PARAMS->{extension};
   my $start       = $PARAMS->{start};
 
   #
@@ -389,7 +391,14 @@ role {
   # The version using hashes:
   #
   my $struct_ctor = $is_common ? \&_common_new : \&_generic_new;
-  my $struct_new = &$struct_ctor;
+  #
+  # If there is an extension, this is a coderef that is amending
+  # members to the structure. If undef, provide a default one
+  # that is doing nothing
+  #
+  $extension = sub { $_[0] } unless defined $extension;
+  my $struct_new = $extension->(&$struct_ctor);
+
   my @fields = keys %{$struct_new};
   map { $fields{$_} = 0 } @fields;
   while (my ($key, $value) = each %{$mapping}) {
@@ -475,7 +484,7 @@ role {
     # Version using Type:
     # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
     # Version using hashes:
-    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { &$struct_ctor } 0.._MAX_STRUCTS];
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $extension->(&$struct_ctor) } 0.._MAX_STRUCTS];
     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
     #
@@ -1310,6 +1319,28 @@ BEGIN {
     return $thick_g1_recce->registrations(@_);
   } ## end sub Marpa::R2::Scanless::R::registrations
 
+}
+
+#
+# For re-use we require that the role parameters are all exported
+#
+requires 'role_params';
+#
+# Because we know exactly the format of role params, we can provide ourself
+# a correct implementation of role params clone
+#
+sub role_params_clone {
+  my ($class) = @_;
+
+  my $params = $class->role_params;
+  my %clone = %{$params};
+  #
+  # Everything is ok except mapping that shares a reference
+  #
+  my $mapping = $params->{mapping};
+  $clone{mapping} = { map { $_ => $mapping->{$_} } (keys %{$mapping}) };
+
+  \%clone
 }
 
 1;
