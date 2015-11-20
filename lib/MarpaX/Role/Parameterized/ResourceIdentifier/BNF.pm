@@ -541,8 +541,14 @@ role {
   #
   # If this is an extension, then the parsing first call the extended implementation
   #
+  my @all_fields = @fields;
   if ($extends) {
+    my %all_fields = map { $_ => 1 } @all_fields;
     use_module($extends);
+    foreach ($extends->__fields) {
+      $all_fields{$_}++;
+    }
+    @all_fields = keys %all_fields;
     install_modifier($whoami, 'around', parse =>
                      sub {
                        my ($orig, $self) = (shift, shift);
@@ -648,14 +654,14 @@ role {
   #
   # Converted and normalized structures contents should remain internal, not the raw struct
   #
-  foreach (@fields) {
+  foreach (@all_fields) {
     my $inlined = "\$_[0]->{_structs}->[$_RAW_STRUCT]->{$_}";
     install_modifier($whoami, 'fresh', "_$_" => eval "sub { $inlined }" );
   }
   #
   # List of fields
   #
-  install_modifier($whoami, 'fresh', __fields => sub { @fields } );
+  install_modifier($whoami, 'fresh', __fields => sub { @all_fields } );
   #
   # All instance methods. Some of them could have been writen outside of this
   # parameterized role, though they might be a dependency on the $top variable
@@ -1057,7 +1063,7 @@ IS_ABSOLUTE
     # Version using Type:
     # next if ! $struct_new->can($component);
     # Version using hashes:
-    next if ! exists $struct_new->{$component};
+    next if ! grep { $_ eq $component} @all_fields;
     #
     # Fields used for recomposition at always limited to scheme+opaque+fragment if:
     # - current component is opaque, or
