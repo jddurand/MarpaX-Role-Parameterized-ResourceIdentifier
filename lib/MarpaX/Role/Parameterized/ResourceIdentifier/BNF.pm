@@ -880,9 +880,69 @@ role {
                    sub { $_[0] }
                    :
                    #
-                   # rel() on the generic syntax TODO
+                   # rel() on the generic syntax. Totally based on URI algorithm
                    #
-                   sub { $_[0] }
+                   sub {
+                     my ($self, $base) = @_;
+                     croak 'Missing second argument' unless defined $base;
+                     #
+                     # If already relative, do nothing
+                     #
+                     return $self if $self->is_relative;
+                     #
+                     # Make sure base is an object
+                     #
+                     my $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                     #
+                     # Nothing to do if base is not absolute
+                     #
+                     return $self unless $base_ri->is_absolute;
+                     #
+                     # Nothing to do if self and base do not share the same notion of parent_location
+                     #
+                     return $self unless $self->parent_location eq $base_ri->parent_location;
+                     #
+                     # Get raw and normalized results: normalized is used for all logical ops
+                     #
+                     my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
+                     my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
+                     my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];
+                     my $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
+                     #
+                     # What is important is the path, and we consider eventual authority as
+                     # a filter
+                     #
+                     my $nself_authority = $nself_struct->{authority} // '';
+                     my $nbase_authority = $nbase_struct->{authority} // '';
+                     return $self if ($nself_authority ne $nbase_authority);
+                     #
+                     # We intentionnaly ignore fragment
+                     #
+                     my @self_parts = @{$self_struct->{segments}};
+                     # my @base_parts = @{base_struct->{segments}};    # Not used
+                     my @nself_parts = @{$nself_struct->{segments}};
+                     my @nbase_parts = @{$nbase_struct->{segments}};
+                     #
+                     # Remove from @self_parts what is common with @base_parts
+                     #
+                     while (@nself_parts) {
+                       last if (! @nbase_parts);
+                       shift @self_parts;  # Keep @self_parts synchron
+                       my $nself_part = shift @nself_parts;
+                       my $nbase_part = shift @nbase_parts;
+                       last if ($nself_part ne $nbase_part);
+                     }
+                     #
+                     # For every remaining @nbase_parts, push a parent_location syntax in... @self_parts
+                     #
+                     map { unshift(@self_parts, $self->parent_location) } 0..$#nbase_parts;
+                     #
+                     # Finally the relative URL is @self_parts and eventual fragment
+                     #
+                     my %R = ( opaque => join('', @self_parts) );
+                     $R{fragment} = $self_struct->{fragment} if defined $self_struct->{fragment};
+                     $top->new(__PACKAGE__->_recompose(\%R))
+                   }
                   );
   #
   # abs(): ditto
@@ -941,10 +1001,12 @@ role {
                        $self->parent_location  eq $base_ri->parent_location
                        ;
                      #
-                     # Get raw parsing results
+                     # Get raw and normalized parsing results: normalized is used for all logical ops
                      #
                      my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
                      my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
+                     my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];
+                     my $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
                      #
                      # Do the transformation
                      #
@@ -955,6 +1017,13 @@ role {
                                  query     => $base_struct->{query},
                                  fragment  => $base_struct->{fragment}
                                 );
+                     my %nBase = (
+                                  scheme    => $nbase_struct->{scheme},
+                                  authority => $nbase_struct->{authority},
+                                  path      => $nbase_struct->{path},
+                                  query     => $nbase_struct->{query},
+                                  fragment  => $nbase_struct->{fragment}
+                                 );
                      #
                      #   Normalization of the base URI, as described in Sections 6.2.2 and
                      # 6.2.3, is optional.  A URI reference must be transformed to its
@@ -976,6 +1045,13 @@ role {
                               query     => $self_struct->{query},
                               fragment  => $self_struct->{fragment}
                              );
+                     my %nR = (
+                               scheme    => $nself_struct->{scheme},
+                               authority => $nself_struct->{authority},
+                               path      => $nself_struct->{path},
+                               query     => $nself_struct->{query},
+                               fragment  => $nself_struct->{fragment}
+                              );
                      #
                      # -- A non-strict parser may ignore a scheme in the reference
                      # -- if it is identical to the base URI's scheme.
@@ -988,13 +1064,13 @@ role {
                      # is the default
                      #
                      my %T = ();
-                     if (defined  $R{scheme}) {
+                     if (defined $R{scheme}) {
                        $T{scheme}    = $R{scheme};
                        $T{authority} = $R{authority};
                        $T{path}      = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                        $T{query}     = $R{query};
                      } else {
-                       if (defined  $R{authority}) {
+                       if (defined $R{authority}) {
                          $T{authority} = $R{authority};
                          $T{path}      = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                          $T{query}     = $R{query};
@@ -1048,9 +1124,17 @@ CLONE
   #
   my $is_absolute_inlined = <<IS_ABSOLUTE;
 my \$raw_struct = \$_[0]->{_structs}->[$_RAW_STRUCT];
-defined \$raw_struct->{scheme} ? length \$raw_struct->{scheme} : 0
+defined \$raw_struct->{scheme}
 IS_ABSOLUTE
   install_modifier($whoami, 'fresh', is_absolute => eval "sub { $is_absolute_inlined }");
+  #
+  # is_relative(): inlined
+  #
+  my $is_relative_inlined = <<IS_RELATIVE;
+my \$raw_struct = \$_[0]->{_structs}->[$_RAW_STRUCT];
+! defined \$raw_struct->{scheme}
+IS_RELATIVE
+  install_modifier($whoami, 'fresh', is_relative => eval "sub { $is_relative_inlined }");
   #
   # For all these fields, always apply the same algorithm.
   # Note that opaque field always has precedence overt authority or path or query
