@@ -18,6 +18,7 @@ use MarpaX::RFC::RFC3629;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 # use MarpaX::Role::Parameterized::ResourceIdentifier::Types qw/Common Generic/; # I moved to hash see below
+use Module::Runtime qw/use_module/;
 use Moo::Role;
 use MooX::Role::Logger;
 use MooX::HandlesVia;
@@ -316,6 +317,7 @@ our $check_params = compile(
                             Dict[
                                  whoami      => Str,
                                  type        => Enum[qw/_common _generic/],
+                                 extends     => Optional[Str],
                                  spec        => Enum[qw/uri iri/],
                                  top         => Str,
                                  bnf         => Str,
@@ -324,7 +326,7 @@ our $check_params = compile(
                                  unreserved  => RegexpRef,
                                  pct_encoded => Str|Undef,
                                  mapping     => HashRef[Str],
-                                 extension   => Optional[CodeRef],
+                                 struct_ext  => Optional[CodeRef],
                                  _orig_arg   => Optional[Any]
                                 ]
                            );
@@ -349,12 +351,20 @@ role {
 
   my $whoami      = $PARAMS->{whoami};
   my $type        = $PARAMS->{type};
+  my $extends     = $PARAMS->{extends};
+  my $struct_ext  = $PARAMS->{struct_ext};
   my $spec        = $PARAMS->{spec};
   my $top         = $PARAMS->{top};
   my $bnf         = $PARAMS->{bnf};
   my $mapping     = $PARAMS->{mapping};
-  my $extension   = $PARAMS->{extension};
   my $start       = $PARAMS->{start};
+
+  if ($extends) {
+    #
+    # An extension must provide 'can_scheme'
+    #
+    requires 'can_scheme';
+  }
 
   #
   # Make sure $whoami package is doing MooX::Role::Logger is not already
@@ -392,12 +402,12 @@ role {
   #
   my $struct_ctor = $is_common ? \&_common_new : \&_generic_new;
   #
-  # If there is an extension, this is a coderef that is amending
+  # If there is a struct_ext, this is a coderef that is amending
   # members to the structure. If undef, provide a default one
   # that is doing nothing
   #
-  $extension = sub { $_[0] } unless defined $extension;
-  my $struct_new = $extension->(&$struct_ctor);
+  $struct_ext = sub { $_[0] } unless defined $struct_ext;
+  my $struct_new = $struct_ext->(&$struct_ctor);
 
   my @fields = keys %{$struct_new};
   map { $fields{$_} = 0 } @fields;
@@ -484,7 +494,7 @@ role {
     # Version using Type:
     # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
     # Version using hashes:
-    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $extension->(&$struct_ctor) } 0.._MAX_STRUCTS];
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_ext->(&$struct_ctor) } 0.._MAX_STRUCTS];
     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
     #
@@ -522,8 +532,47 @@ role {
     }
     my $value = ${$value_ref};
     do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0.._MAX_STRUCTS;
+    #
+    # No return value from parse
+    #
+    return
   };
   install_modifier($whoami, 'fresh', parse => $parse);
+  #
+  # If this is an extension, then the parsing first call the extended implementation
+  #
+  if ($extends) {
+    use_module($extends);
+    install_modifier($whoami, 'around', parse =>
+                     sub {
+                       my ($orig, $self) = (shift, shift);
+                       #
+                       # Call extended implementation
+                       #
+                       my $parent_self = $extends->new({input => $self->input});
+                       #
+                       # Get the _structs
+                       #
+                       my $parent_structs = $parent_self->{_structs};
+                       #
+                       # Call our method
+                       #
+                       $self->$orig(@_);
+                       #
+                       # And overwrite only the struct members
+                       # that the extension declared
+                       #
+                       foreach my $index (0..$#{$parent_structs}) {
+                         my $parent_struct = $parent_structs->[$index];
+                         my $self_struct = $self->{_structs}->[$index];
+                         foreach (keys %{$self_struct}) {
+                           $parent_struct->{$_} = $self_struct->{$_} unless exists $parent_struct->{$_};
+                         }
+                         $self->{_structs}->[$index] = $parent_struct;
+                       }
+                     }
+                    );
+  }
 
   #
   # Inject the action
