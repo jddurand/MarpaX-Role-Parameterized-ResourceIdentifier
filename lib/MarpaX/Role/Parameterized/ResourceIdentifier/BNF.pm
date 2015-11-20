@@ -1040,7 +1040,7 @@ EQ
   # clone(): inlined
   #
   my $clone_inlined = <<CLONE;
-$top->new(\$_[0]->{_orig_arg})
+$top->new(\$_[0]->{input})
 CLONE
   install_modifier($whoami, 'fresh', clone => eval "sub { $clone_inlined }");
   #
