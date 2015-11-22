@@ -958,8 +958,9 @@ role {
                    # abs() on the generic syntax is ok
                    #
                    sub {
-                     my ($self, $base) = @_;
+                     my ($self, $base, $abs_normalized_base) = @_;
                      croak 'Missing second argument' unless defined $base;
+                     $abs_normalized_base //= $self->abs_normalized_base;
 
                      my $strict              = $setup->remove_dot_segments_strict;
                      my $remote_leading_dots = $setup->abs_remote_leading_dots;
@@ -967,11 +968,20 @@ role {
                      # If reference is already absolute, nothing to do if we are in strict mode, or
                      # if self's base is not the same as absolute base
                      #
+                     my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
+                     my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];
                      my $base_ri;
+                     my $base_struct;
+                     my $nbase_struct;
                      if ($self->is_absolute) {
                        return $self if $strict;
                        $base_ri = (blessed($base) && $base->InstanceOf($top)) ? $base : $top->new($base);
-                       return $self unless $base_ri->is_absolute && ($self->_scheme eq $base_ri->_scheme);
+                       $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
+                       $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
+                       #
+                       # I suppose(d) that using the normalized scheme is implicit in this test
+                       #
+                       return $self unless $base_ri->is_absolute && ($nself_struct->{scheme} eq $nbase_struct->{scheme});
                      }
                      #
                      # https://tools.ietf.org/html/rfc3986
@@ -1001,12 +1011,10 @@ role {
                        $self->parent_location  eq $base_ri->parent_location
                        ;
                      #
-                     # Get raw and normalized parsing results: normalized is used for all logical ops
+                     # Normalized version is used for all logical ops
                      #
-                     my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
-                     my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
-                     my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];
-                     my $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
+                     $base_struct //= $base_ri->{_structs}->[$_RAW_STRUCT];
+                     $nbase_struct //= $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
                      #
                      # Do the transformation
                      #
@@ -1028,6 +1036,8 @@ role {
                      #   Normalization of the base URI, as described in Sections 6.2.2 and
                      # 6.2.3, is optional.  A URI reference must be transformed to its
                      # target URI before it can be normalized.
+                     #
+                     my %wBase = $abs_normalized_base ? %nBase : %Base;
                      #
                      # 5.2.2.  Transform References
                      #
@@ -1056,7 +1066,10 @@ role {
                      # -- A non-strict parser may ignore a scheme in the reference
                      # -- if it is identical to the base URI's scheme.
                      # --
-                     if ((! $strict) && defined($R{scheme}) && defined($Base{scheme}) && ($R{scheme} eq $Base{scheme})) {
+                     #
+                     # I suppose(d) that using the normalized scheme is implicit here
+                     #
+                     if ((! $strict) && defined($nR{scheme}) && defined($nBase{scheme}) && ($nR{scheme} eq $nBase{scheme})) {
                        $R{scheme} = undef;
                      }
                      #
@@ -1076,20 +1089,20 @@ role {
                          $T{query}     = $R{query};
                        } else {
                          if (! length($R{path})) {
-                           $T{path} = $Base{path};
-                           $T{query} = Undef->check($R{query}) ? $Base{query} : $R{query};
+                           $T{path} = $wBase{path};
+                           $T{query} = Undef->check($R{query}) ? $wBase{query} : $R{query};
                          } else {
                            if (substr($R{path}, 0, 1) eq '/') {
                              $T{path} = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                            } else {
-                             $T{path} = __PACKAGE__->_merge(\%Base, \%R);
+                             $T{path} = __PACKAGE__->_merge(\%wBase, \%R);
                              $T{path} = $self->remove_dot_segments($T{path}, $remote_leading_dots);
                            }
                            $T{query} = $R{query};
                          }
-                         $T{authority} = $Base{authority};
+                         $T{authority} = $wBase{authority};
                        }
-                       $T{scheme} = $Base{scheme};
+                       $T{scheme} = $wBase{scheme};
                      }
 
                      $T{fragment} = $R{fragment};

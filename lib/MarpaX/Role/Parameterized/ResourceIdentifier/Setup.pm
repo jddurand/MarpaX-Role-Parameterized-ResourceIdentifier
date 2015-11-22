@@ -25,6 +25,7 @@ sub can_scheme_methodname      { $MarpaX::RI::CAN_SCHEME_METHODNAME   // 'can_sc
 # The followings can return undef
 #
 sub abs_remote_leading_dots    { __PACKAGE__->uri_compat() ?   $URI::ABS_REMOTE_LEADING_DOTS   :   $MarpaX::RI::ABS_REMOTE_LEADING_DOTS    }
+sub abs_normalized_base        { __PACKAGE__->uri_compat() ?                               0   :   $MarpaX::RI::ABS_NORMALIZED_BASE        }
 sub remove_dot_segments_strict { __PACKAGE__->uri_compat() ? ! $URI::ABS_ALLOW_RELATIVE_SCHEME : ! $MarpaX::RI::ABS_ALLOW_RELATIVE_SCHEME  }
 
 with 'MooX::Singleton';
