@@ -892,7 +892,7 @@ role {
                      #
                      # Make sure base is an object
                      #
-                     my $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                     my $base_ri = (blessed($base) && $base->InstanceOf($top)) ? $base : $top->new($base);
                      #
                      # Nothing to do if base is not absolute
                      #
@@ -970,7 +970,7 @@ role {
                      my $base_ri;
                      if ($self->is_absolute) {
                        return $self if $strict;
-                       $base_ri = (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                       $base_ri = (blessed($base) && $base->InstanceOf($top)) ? $base : $top->new($base);
                        return $self unless $base_ri->is_absolute && ($self->_scheme eq $base_ri->_scheme);
                      }
                      #
@@ -985,7 +985,7 @@ role {
                      # not appear in the URI reference; the path component is never
                      # undefined, though it may be empty.
                      #
-                     $base_ri //= (blessed($base) && $base->does(__PACKAGE__)) ? $base : $top->new($base);
+                     $base_ri //= (blessed($base) && $base->InstanceOf($top)) ? $base : $top->new($base);
                      #
                      # This is working only if $base is absolute
                      #
@@ -1104,11 +1104,12 @@ role {
   # not have to be an object (i.e. this is not using the overload)
   #
   my $eq_inlined = <<EQ;
+use Types::Standard -all;
 my (\$self, \$other) = \@_;
 \$self  = $top->new(\$self)  unless blessed \$self;
 \$other = $top->new(\$other) unless blessed \$other;
-croak "\$self should do $__PACKAGE__" unless \$self->does('$__PACKAGE__');
-croak "\$other should do $__PACKAGE__" unless \$other->does('$__PACKAGE__');
+croak "\$self should do $__PACKAGE__" unless \$self->InstanceOf('$top');
+croak "\$other should do $__PACKAGE__" unless \$other->InstanceOf('$top');
 \$self->canonical eq \$other->canonical
 EQ
   install_modifier($top, 'fresh', eq => eval "sub { $eq_inlined }") unless ($top->can('eq'));
