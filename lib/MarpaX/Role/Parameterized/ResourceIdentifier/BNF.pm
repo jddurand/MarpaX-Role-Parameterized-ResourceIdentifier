@@ -960,7 +960,7 @@ role {
                    sub {
                      my ($self, $base, $abs_normalized_base) = @_;
                      croak 'Missing second argument' unless defined $base;
-                     $abs_normalized_base //= $self->abs_normalized_base;
+                     $abs_normalized_base //= $setup->abs_normalized_base;
 
                      my $strict              = $setup->remove_dot_segments_strict;
                      my $remote_leading_dots = $setup->abs_remote_leading_dots;
