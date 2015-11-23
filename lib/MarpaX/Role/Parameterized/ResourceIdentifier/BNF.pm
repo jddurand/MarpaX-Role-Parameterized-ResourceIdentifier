@@ -11,7 +11,6 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::BNF;
 
 use Carp qw/croak/;
 use Class::Method::Modifiers qw/install_modifier/;
-use Data::Dumper;
 use Encode 2.21 qw/find_encoding encode decode/; # 2.21 for mime_name support
 use Marpa::R2;
 use MarpaX::RFC::RFC3629;
@@ -883,8 +882,11 @@ role {
                    # rel() on the generic syntax. Totally based on URI algorithm
                    #
                    sub {
-                     my ($self, $base) = @_;
+                     my ($self, $base, $rel_normalized) = @_;
                      croak 'Missing second argument' unless defined $base;
+
+                     $rel_normalized //= $setup->rel_normalized;
+
                      #
                      # If already relative, do nothing
                      #
@@ -902,46 +904,95 @@ role {
                      #
                      return $self unless $self->parent_location eq $base_ri->parent_location;
                      #
-                     # Get raw and normalized results: normalized is used for all logical ops
+                     # Get the raw and normalized results: normalized is used for all logical ops
                      #
-                     my $self_struct = $self->{_structs}->[$_RAW_STRUCT];
-                     my $base_struct = $base_ri->{_structs}->[$_RAW_STRUCT];
+                     my $self_struct  = $self->{_structs}->[$_RAW_STRUCT];
                      my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];
+                     my $base_struct  = $base_ri->{_structs}->[$_RAW_STRUCT];
                      my $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
+                     #
+                     # Neither if they do not comply both with the generic syntax
+                     #
+                     return $self unless Generic_check($self_struct) && Generic_check($base_struct);
+                     #
+                     # Nothing to do if self and base do not share the same scheme
+                     #
+                     my $self_scheme = ($rel_normalized ? $nself_struct->{scheme} : $self_struct->{scheme}) // '';
+                     my $base_scheme = ($rel_normalized ? $nbase_struct->{scheme} : $base_struct->{scheme}) // '';
+                     return $self unless $self_scheme eq $base_scheme;
                      #
                      # What is important is the path, and we consider eventual authority as
                      # a filter
                      #
-                     my $nself_authority = $nself_struct->{authority} // '';
-                     my $nbase_authority = $nbase_struct->{authority} // '';
-                     return $self if ($nself_authority ne $nbase_authority);
-                     #
-                     # We intentionnaly ignore fragment
-                     #
-                     my @self_parts = @{$self_struct->{segments}};
-                     # my @base_parts = @{base_struct->{segments}};    # Not used
-                     my @nself_parts = @{$nself_struct->{segments}};
-                     my @nbase_parts = @{$nbase_struct->{segments}};
-                     #
-                     # Remove from @self_parts what is common with @base_parts
-                     #
-                     while (@nself_parts) {
-                       last if (! @nbase_parts);
-                       shift @self_parts;  # Keep @self_parts synchron
-                       my $nself_part = shift @nself_parts;
-                       my $nbase_part = shift @nbase_parts;
-                       last if ($nself_part ne $nbase_part);
+                     my $self_authority = ($rel_normalized ? $nself_struct->{authority} : $self_struct->{authority}) // '';
+                     my $base_authority = ($rel_normalized ? $nbase_struct->{authority} : $base_struct->{authority}) // '';
+                     if ($self_authority ne $base_authority) {
+                       #
+                       # Return the relative version of $self
+                       #
+                       my %R = ( opaque => $self_struct->{opaque} );
+                       $R{fragment}  = $self_struct->{fragment} if defined $self_struct->{fragment};
+                       return $top->new(__PACKAGE__->_recompose(\%R));
                      }
                      #
-                     # For every remaining @nbase_parts, push a parent_location syntax in... @self_parts
+                     # The algorithm is based on segments, i.e. the path without fragment
                      #
-                     map { unshift(@self_parts, $self->parent_location) } 0..$#nbase_parts;
+                     my @self_segments = $rel_normalized ? @{$nself_struct->{segments}} : @{$self_struct->{segments}};
+                     my @base_segments = $rel_normalized ? @{$nbase_struct->{segments}} : @{$base_struct->{segments}};
                      #
-                     # Finally the relative URL is @self_parts and eventual fragment
+                     # We want to have the equivalent of basename() on @base_segments and @self_segments
                      #
-                     my %R = ( opaque => join('', @self_parts) );
+                     my $self_basename = @self_segments ? (length($self_segments[-1]) ? pop(@self_segments) : undef) : undef;
+                     my $base_basename = @base_segments ? (length($base_segments[-1]) ? pop(@base_segments) : undef) : undef;
+                     my $add_basename = defined($self_basename) ? (defined($base_basename) ? $self_basename ne $base_basename : 0) : 0;
+                     #
+                     # Idem for the query
+                     #
+                     my $self_query = $self_struct->{query};
+                     my $base_query = $base_struct->{query};
+                     my $add_query = defined($self_query) ? (defined($base_query) ? $self_query ne $base_query : 0) : 0;
+                     #
+                     # In uri_compat mode, first element is empty... This should always be the case, though we control that
+                     #
+                     if ($setup->uri_compat) {
+                       shift(@self_segments) if @self_segments && ! length $self_segments[0];
+                       shift(@base_segments) if @base_segments && ! length $base_segments[0];
+                     }
+                     #
+                     # When self or base are already in a "dirname" format, the last segment is empty
+                     #
+                     pop(@self_segments) if @self_segments && ! length $self_segments[-1];
+                     pop(@base_segments) if @base_segments && ! length $base_segments[-1];
+                     #
+                     # Now @self_segments and @base_segments are guaranteed to contain only "dirname" parts
+                     # We want to nuke @self_parts from what is is common with @nbase_parts
+                     #
+                     while (@self_segments) {
+                       last if (! @base_segments);
+                       last if ($self_segments[0] ne $base_segments[0]);
+                       shift @self_segments;
+                       shift @base_segments;
+                     }
+                     #
+                     # What remains in @base_segments is transformed to a parent_location
+                     #
+                     my @parent_locations = map { $self->parent_location } 0..$#base_segments;
+                     #
+                     # basename and query are always set if @self_segments is not empty
+                     #
+                     if (@self_segments) {
+                       $add_basename = defined $self_basename;
+                       $add_query    = defined $self_query;
+                     }
+                     #
+                     # Finally the relative URL is @parent_locations, @self_segments and $self_basename + eventual self fragment
+                     #
+                     my %R = ( opaque => join('', map { $_ . '/' } (@parent_locations, @self_segments) ) );
+                     $R{opaque}  .=       $self_basename if $add_basename;
+                     $R{opaque}  .= '?' . $self_query    if $add_query;
                      $R{fragment} = $self_struct->{fragment} if defined $self_struct->{fragment};
-                     $top->new(__PACKAGE__->_recompose(\%R))
+                     my $rc = $top->new(__PACKAGE__->_recompose(\%R));
+                     $rc
                    }
                   );
   #
@@ -1015,6 +1066,10 @@ role {
                      #
                      $base_struct //= $base_ri->{_structs}->[$_RAW_STRUCT];
                      $nbase_struct //= $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
+                     #
+                     # All structures have to comply with the generic syntax
+                     #
+                     return $self unless Generic_check($self_struct) && Generic_check($base_struct);
                      #
                      # Do the transformation
                      #
