@@ -906,91 +906,116 @@ role {
                      #
                      # Get the raw and normalized results: normalized is used for all logical ops
                      #
-                     my $self_struct  = $self->{_structs}->[$_RAW_STRUCT];
-                     my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];
-                     my $base_struct  = $base_ri->{_structs}->[$_RAW_STRUCT];
-                     my $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];
+                     my $self_struct  = $self->{_structs}->[$_RAW_STRUCT];                  # raw
+                     my $nself_struct = $self->{_structs}->[$_NORMALIZED_STRUCT];           # normalized
+                     my $wself_struct = $rel_normalized ? $nself_struct : $self_struct;     # work
+                     my $base_struct  = $base_ri->{_structs}->[$_RAW_STRUCT];               # raw
+                     my $nbase_struct = $base_ri->{_structs}->[$_NORMALIZED_STRUCT];        # normalized
+                     my $wbase_struct = $rel_normalized ? $nbase_struct : $base_struct;     # work
                      #
-                     # Neither if they do not comply both with the generic syntax
+                     # Nothing to do if neither self or base comply both with the generic syntax
                      #
                      return $self unless Generic_check($self_struct) && Generic_check($base_struct);
                      #
                      # Nothing to do if self and base do not share the same scheme
                      #
-                     my $self_scheme = ($rel_normalized ? $nself_struct->{scheme} : $self_struct->{scheme}) // '';
-                     my $base_scheme = ($rel_normalized ? $nbase_struct->{scheme} : $base_struct->{scheme}) // '';
-                     return $self unless $self_scheme eq $base_scheme;
+                     return $self unless ($wself_struct->{scheme} // '') eq ($wbase_struct->{scheme} // '');
                      #
                      # What is important is the path, and we consider eventual authority as
                      # a filter
                      #
-                     my $self_authority = ($rel_normalized ? $nself_struct->{authority} : $self_struct->{authority}) // '';
-                     my $base_authority = ($rel_normalized ? $nbase_struct->{authority} : $base_struct->{authority}) // '';
-                     if ($self_authority ne $base_authority) {
+                     if (($wself_struct->{authority} // '') ne ($wbase_struct->{authority} // '')) {
                        #
                        # Return the relative version of $self
                        #
-                       my %R = ( opaque => $self_struct->{opaque} );
-                       $R{fragment}  = $self_struct->{fragment} if defined $self_struct->{fragment};
-                       return $top->new(__PACKAGE__->_recompose(\%R));
+                       return $top->new(__PACKAGE__->_recompose({
+                                                                 authority => $self_struct->{authority},
+                                                                 path      => $self_struct->{path},
+                                                                 query     => $self_struct->{query},
+                                                                 fragment  => $self_struct->{fragment}
+                                                                }));
                      }
                      #
-                     # The algorithm is based on segments, i.e. the path without fragment
+                     # The algorithm is first based on segments, i.e. the path without query and fragment
                      #
-                     my @self_segments = $rel_normalized ? @{$nself_struct->{segments}} : @{$self_struct->{segments}};
-                     my @base_segments = $rel_normalized ? @{$nbase_struct->{segments}} : @{$base_struct->{segments}};
+                     my @wself_segments = @{$wself_struct->{segments}};
+                     my @wbase_segments = @{$wbase_struct->{segments}};
                      #
-                     # We want to have the equivalent of basename() on @base_segments and @self_segments
-                     #
-                     my $self_basename = @self_segments ? (length($self_segments[-1]) ? pop(@self_segments) : undef) : undef;
-                     my $base_basename = @base_segments ? (length($base_segments[-1]) ? pop(@base_segments) : undef) : undef;
-                     my $add_basename = defined($self_basename) ? (defined($base_basename) ? $self_basename ne $base_basename : 0) : 0;
-                     #
-                     # Idem for the query
-                     #
-                     my $self_query = $self_struct->{query};
-                     my $base_query = $base_struct->{query};
-                     my $add_query = defined($self_query) ? (defined($base_query) ? $self_query ne $base_query : 0) : 0;
-                     #
-                     # In uri_compat mode, first element is empty... This should always be the case, though we control that
+                     # In uri_compat mode, first element is empty. This should always be the case, though we control that.
                      #
                      if ($setup->uri_compat) {
-                       shift(@self_segments) if @self_segments && ! length $self_segments[0];
-                       shift(@base_segments) if @base_segments && ! length $base_segments[0];
+                       shift(@wself_segments) if @wself_segments && ! length $wself_segments[0];
+                       shift(@wbase_segments) if @wbase_segments && ! length $wbase_segments[0];
                      }
                      #
-                     # When self or base are already in a "dirname" format, the last segment is empty
+                     # We want to have the equivalent of basename() on @wbase_segments and @wself_segments
+                     # Query and eventual fragments are considered part of the basename
                      #
-                     pop(@self_segments) if @self_segments && ! length $self_segments[-1];
-                     pop(@base_segments) if @base_segments && ! length $base_segments[-1];
-                     #
-                     # Now @self_segments and @base_segments are guaranteed to contain only "dirname" parts
-                     # We want to nuke @self_parts from what is is common with @nbase_parts
-                     #
-                     while (@self_segments) {
-                       last if (! @base_segments);
-                       last if ($self_segments[0] ne $base_segments[0]);
-                       shift @self_segments;
-                       shift @base_segments;
+                     my $wself_basename = @wself_segments ? (length($wself_segments[-1]) ? pop(@wself_segments) : undef) : undef;
+                     my $wbase_basename = @wbase_segments ? (length($wbase_segments[-1]) ? pop(@wbase_segments) : undef) : undef;
+                     if (defined $wself_basename) {
+                       $wself_basename .= '?' . $wself_struct->{query}    if defined($wself_struct->{query});
+                       $wself_basename .= '#' . $wself_struct->{fragment} if defined($wself_struct->{fragment});
+                     }
+                     if (defined $wbase_basename) {
+                       $wbase_basename .= '?' . $wbase_struct->{query}    if defined($wbase_struct->{query});
+                       $wbase_basename .= '#' . $wbase_struct->{fragment} if defined($wbase_struct->{fragment});
                      }
                      #
-                     # What remains in @base_segments is transformed to a parent_location
+                     # When a RI end with '/', its last segment is empty
                      #
-                     my @parent_locations = map { $self->parent_location } 0..$#base_segments;
+                     pop(@wself_segments) if (@wself_segments && ! length($wself_segments[-1]));
+                     pop(@wbase_segments) if (@wbase_segments && ! length($wbase_segments[-1]));
                      #
-                     # basename and query are always set if @self_segments is not empty
+                     # Now @wself_segments and @wbase_segments are guaranteed to contain only "dirname" parts
+                     # We want to nuke @wself_segments from what is is common with @wbase_segments
                      #
-                     if (@self_segments) {
-                       $add_basename = defined $self_basename;
-                       $add_query    = defined $self_query;
+                     while (@wself_segments) {
+                       last if (! @wbase_segments);
+                       last if ($wself_segments[0] ne $wbase_segments[0]);
+                       shift @wself_segments;
+                       shift @wbase_segments;
                      }
                      #
-                     # Finally the relative URL is @parent_locations, @self_segments and $self_basename + eventual self fragment
+                     # If @wbase_segments is not empty, its eventual base's basename, query and fragments are irrelevant.
+                     # and any element in @base_segments is transformed to a parent location.
+                     # But if it is empty, it is possible that there is equality.
                      #
-                     my %R = ( opaque => join('', map { $_ . '/' } (@parent_locations, @self_segments) ) );
-                     $R{opaque}  .=       $self_basename if $add_basename;
-                     $R{opaque}  .= '?' . $self_query    if $add_query;
-                     $R{fragment} = $self_struct->{fragment} if defined $self_struct->{fragment};
+                     my @parent_locations;
+                     if (@wbase_segments) {
+                       @parent_locations = map { $self->parent_location } 0..$#wbase_segments;
+                     } else {
+                       if ((defined($wbase_basename) && ! defined($wself_basename)) ||
+                           (defined($wself_basename) && ! defined($wbase_basename)) ||
+                           (defined($wself_basename) && defined($wbase_basename) && ($wself_basename ne $wbase_basename))) {
+                         @parent_locations = ( $self->parent_location );
+                       } else {
+                         #
+                         # If $self has no basename, insert a current_location if there is no remaining segment
+                         #
+                         if (! defined($wself_basename)) {
+                           if (! @wself_segments) {
+                             @parent_locations = ( $self->current_location );
+                           } else {
+                             @parent_locations = ();
+                           }
+                         } else {
+                           @parent_locations = ();
+                         }
+                       }
+                     }
+                     #
+                     # Finally the relative URL is @parent_locations, @wself_segments and eventual $self_basename
+                     #
+                     my %R = ( opaque => join('', map { $_ . '/' } (@parent_locations, @wself_segments) ) );
+                     if (defined $wself_basename) {
+                       $R{opaque}  .= $wself_basename;
+                     } else {
+                       #
+                       # No self's basename: remove last '/'
+                       #
+                       substr($R{opaque}, -1, 1, '') if length $R{opaque};
+                     }
                      my $rc = $top->new(__PACKAGE__->_recompose(\%R));
                      $rc
                    }
