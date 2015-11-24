@@ -936,10 +936,10 @@ role {
                                                                 }));
                      }
                      #
-                     # The algorithm is first based on segments, i.e. the path without query and fragment
+                     # The algorithm is first on directories, derived from segments (for very last segment see below)
                      #
-                     my @wself_segments = @{$wself_struct->{segments}};
-                     my @wbase_segments = @{$wbase_struct->{segments}};
+                     my @wself_dirs = @{$wself_struct->{segments}};
+                     my @wbase_dirs = @{$wbase_struct->{segments}};
                      #
                      # Remember if self ends with a '/'
                      #
@@ -948,71 +948,109 @@ role {
                      # In uri_compat mode, first element is empty. This should always be the case, though we control that.
                      #
                      if ($setup->uri_compat) {
-                       shift(@wself_segments) if @wself_segments && ! length $wself_segments[0];
-                       shift(@wbase_segments) if @wbase_segments && ! length $wbase_segments[0];
+                       shift(@wself_dirs) if @wself_dirs && ! length $wself_dirs[0];
+                       shift(@wbase_dirs) if @wbase_dirs && ! length $wbase_dirs[0];
                      }
                      #
-                     # We want to have the equivalent of basename() on @wbase_segments and @wself_segments
+                     # We want to have the equivalent of basename() on @wbase_dirs and @wself_dirs
                      # Query and eventual fragments are considered part of the basename
                      #
-                     my $wself_basename = @wself_segments ? (length($wself_segments[-1]) ? pop(@wself_segments) : undef) : undef;
-                     my $wbase_basename = @wbase_segments ? (length($wbase_segments[-1]) ? pop(@wbase_segments) : undef) : undef;
+                     my $wself_basename = @wself_dirs ? (length($wself_dirs[-1]) ? pop(@wself_dirs) : undef) : undef;
+                     my $wbase_basename = @wbase_dirs ? (length($wbase_dirs[-1]) ? pop(@wbase_dirs) : undef) : undef;
+                     my ($wself_base, $wself_query, $wself_fragment) = ($wself_basename, $wself_struct->{query}, $wself_struct->{fragment});
+                     my ($wbase_base, $wbase_query, $wbase_fragment) = ($wbase_basename, $wbase_struct->{query}, $wbase_struct->{fragment});
                      if (defined $wself_basename) {
-                       $wself_basename .= '?' . $wself_struct->{query}    if defined($wself_struct->{query});
-                       $wself_basename .= '#' . $wself_struct->{fragment} if defined($wself_struct->{fragment});
+                       $wself_basename .= '?' . $wself_query    if defined $wself_query;
+                       $wself_basename .= '#' . $wself_fragment if defined $wself_fragment;
                      }
                      if (defined $wbase_basename) {
-                       $wbase_basename .= '?' . $wbase_struct->{query}    if defined($wbase_struct->{query});
-                       $wbase_basename .= '#' . $wbase_struct->{fragment} if defined($wbase_struct->{fragment});
+                       $wbase_basename .= '?' . $wbase_query    if defined $wbase_query;
+                       $wbase_basename .= '#' . $wbase_fragment if defined $wbase_fragment;
                      }
                      #
                      # When a RI end with '/', its last segment is empty
                      #
-                     pop(@wself_segments) if (@wself_segments && ! length($wself_segments[-1]));
-                     pop(@wbase_segments) if (@wbase_segments && ! length($wbase_segments[-1]));
+                     pop(@wself_dirs) if (@wself_dirs && ! length($wself_dirs[-1]));
+                     pop(@wbase_dirs) if (@wbase_dirs && ! length($wbase_dirs[-1]));
+                     my $orig_nb_base_segments = scalar(@wbase_dirs);
                      #
-                     # Now @wself_segments and @wbase_segments are guaranteed to contain only "dirname" parts
-                     # We want to nuke @wself_segments from what is is common with @wbase_segments
+                     # Now @wself_dirs and @wbase_dirs are guaranteed to contain only "dirname" parts
+                     # We want to nuke @wself_dirs from what is is common with @wbase_dirs
                      #
-                     while (@wself_segments) {
-                       last if (! @wbase_segments);
-                       last if ($wself_segments[0] ne $wbase_segments[0]);
-                       shift @wself_segments;
-                       shift @wbase_segments;
+                     while (@wself_dirs) {
+                       last if (! @wbase_dirs);
+                       last if ($wself_dirs[0] ne $wbase_dirs[0]);
+                       shift @wself_dirs;
+                       shift @wbase_dirs;
                      }
                      #
-                     # If @wbase_segments is not empty, its eventual base's basename, query and fragments are irrelevant.
+                     # If @wbase_dirs is not empty, its eventual base's basename, query and fragments are irrelevant.
                      # and any element in @base_segments is transformed to a parent location.
                      # But if it is empty, it is possible that there is equality.
                      #
                      my @parent_locations;
-                     if (@wbase_segments) {
-                       @parent_locations = map { $self->parent_location } 0..$#wbase_segments;
-                     } else {
-                       if ((defined($wbase_basename) && ! defined($wself_basename)) ||
-                           (defined($wself_basename) && ! defined($wbase_basename)) ||
-                           (defined($wself_basename) && defined($wbase_basename) && ($wself_basename ne $wbase_basename))) {
-                         @parent_locations = ( $self->parent_location );
+                     if (0) {                  # TEST TEST
+                       if (@wbase_dirs) {
+                         @parent_locations = map { $self->parent_location } 0..$#wbase_dirs;
                        } else {
-                         #
-                         # If $self has no basename, insert a current_location if there is no remaining segment
-                         #
-                         if (! defined($wself_basename)) {
-                           if (! @wself_segments) {
-                             @parent_locations = ( $self->current_location );
+                         if ((defined($wbase_basename) && ! defined($wself_basename)) ||
+                             (defined($wself_basename) && ! defined($wbase_basename)) ||
+                             (defined($wself_basename) && defined($wbase_basename) && ($wself_basename ne $wbase_basename))) {
+                           @parent_locations = ( $self->parent_location );
+                         } else {
+                           #
+                           # If $self has no basename, insert a current_location if there is no remaining segment
+                           #
+                           if (! defined($wself_basename)) {
+                             if (! @wself_dirs) {
+                               @parent_locations = ( $self->current_location );
+                             } else {
+                               @parent_locations = ();
+                             }
                            } else {
                              @parent_locations = ();
                            }
-                         } else {
-                           @parent_locations = ();
                          }
                        }
                      }
-                     @parent_locations = map { $self->parent_location } 0..$#wbase_segments;
+                     @parent_locations = map { $self->parent_location } 0..$#wbase_dirs;
+                     my $prefix = '';
+                     if (scalar(@wbase_dirs) == $orig_nb_base_segments) {
+                       #
+                       # Some fine tuning: suppose we move up to the beginning of the path ? Then
+                       # per def we can change all parent locations by a single '/'...
+                       #
+                       $prefix = '/';
+                       @parent_locations = ();
+                     } elsif (! @parent_locations) {
+                       if (0) {                            # TEST TEST
+                         #
+                         # Same location !
+                         # Do base and self share the same last segment ?
+                         #
+                         if (defined($wself_base) && defined($wbase_base) && $wself_base eq $wbase_base) {
+                           #
+                           # Yes: remove it from wself_basename
+                           #
+                           substr($wself_basename, 0, length($wself_base), '');
+                           #
+                           # Let's got further... Same query ?
+                           #
+                           if (defined($wself_query) && defined($wbase_query) && $wself_query eq $wbase_query) {
+                             #
+                             # Yes: remove it from wself_basename
+                             #
+                             substr($wself_basename, 0, 1 + length($wself_query), '');  # 1 because of the implicit '?'
+                           }
+                         }
+                       }
+                     }
                      #
-                     # Finally the relative URL is @parent_locations, @wself_segments and eventual $self_basename
+                     # Finally the relative URL is @parent_locations, @wself_dirs and eventual $self_basename
                      #
-                     my %R = ( opaque => join('', map { $_ . '/' } (@parent_locations, @wself_segments) ) );
+                     my $opaque = $prefix;
+                     $opaque    .= join('', map { $_ . '/' } (@parent_locations, @wself_dirs));
+                     my %R = ( opaque => $opaque );
                      if (defined $wself_basename) {
                        $R{opaque}  .= $wself_basename;
                      } else {
