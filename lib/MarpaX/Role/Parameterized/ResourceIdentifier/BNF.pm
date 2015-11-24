@@ -941,6 +941,10 @@ role {
                      my @wself_segments = @{$wself_struct->{segments}};
                      my @wbase_segments = @{$wbase_struct->{segments}};
                      #
+                     # Remember if self ends with a '/'
+                     #
+                     my $have_slash = @{$wself_struct->{segments}} && ! length($wself_struct->{segments}->[-1]);
+                     #
                      # In uri_compat mode, first element is empty. This should always be the case, though we control that.
                      #
                      if ($setup->uri_compat) {
@@ -1004,6 +1008,7 @@ role {
                          }
                        }
                      }
+                     @parent_locations = map { $self->parent_location } 0..$#wbase_segments;
                      #
                      # Finally the relative URL is @parent_locations, @wself_segments and eventual $self_basename
                      #
@@ -1012,9 +1017,13 @@ role {
                        $R{opaque}  .= $wself_basename;
                      } else {
                        #
-                       # No self's basename: remove last '/'
+                       # No self's basename: remove last '/' unless $self had one
                        #
-                       substr($R{opaque}, -1, 1, '') if length $R{opaque};
+                       substr($R{opaque}, -1, 1, '') unless $have_slash;
+                     }
+                     if (! length $R{opaque}) {
+                       $R{opaque}  = $self->current_location;
+                       $R{opaque} .= '/' if $have_slash;
                      }
                      my $rc = $top->new(__PACKAGE__->_recompose(\%R));
                      $rc
