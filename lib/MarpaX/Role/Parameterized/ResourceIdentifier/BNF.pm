@@ -379,7 +379,6 @@ role {
   my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
   my $is_common          = $type eq '_common';
   my $is_generic         = $type eq '_generic';
-  my $__PACKAGE__        = __PACKAGE__;
   #
   # A bnf package must provide correspondance between grammar symbols
   # and fields in a structure, in the form "<xxx>" => yyy.
@@ -1212,8 +1211,8 @@ use Types::Standard -all;
 my (\$self, \$other) = \@_;
 \$self  = $top->new(\$self)  unless blessed \$self;
 \$other = $top->new(\$other) unless blessed \$other;
-croak "\$self should do $__PACKAGE__" unless \$self->InstanceOf('$top');
-croak "\$other should do $__PACKAGE__" unless \$other->InstanceOf('$top');
+croak "\$self should inherit from $top" unless \$self->InstanceOf('$top');
+croak "\$other should inherit from $top" unless \$other->InstanceOf('$top');
 \$self->canonical eq \$other->canonical
 EQ
   install_modifier($top, 'fresh', eq => eval "sub { $eq_inlined }") unless ($top->can('eq'));
@@ -1276,7 +1275,7 @@ foreach (qw/@recompose_fields/) {
 #
 # Rebless and call us without argument
 #
-(\$_[0] = $top->new($__PACKAGE__->_recompose(\\\%hash)))->$component
+(\$_[0] = $top->new(\$self->_recompose(\\\%hash)))->$component
 COMPONENT_INLINED
     install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }");
   }
@@ -1312,7 +1311,7 @@ my \%hash = (
 #
 # Rebless and call us without argument
 #
-(\$_[0] = $top->new($__PACKAGE__->_recompose(\\\%hash)))->path_query
+(\$_[0] = $top->new(\$self->_recompose(\\\%hash)))->path_query
 PATH_QUERY_INLINED
     install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
   }
