@@ -921,20 +921,11 @@ role {
                      #
                      return $self unless ($wself_struct->{scheme} // '') eq ($wbase_struct->{scheme} // '');
                      #
-                     # What is important is the path, and we consider eventual authority as
-                     # a filter
+                     # Ditto if they do not have the same (defined) authority
                      #
-                     if (($wself_struct->{authority} // '') ne ($wbase_struct->{authority} // '')) {
-                       #
-                       # Return the relative version of $self
-                       #
-                       return $top->new(__PACKAGE__->_recompose({
-                                                                 authority => $self_struct->{authority},
-                                                                 path      => $self_struct->{path},
-                                                                 query     => $self_struct->{query},
-                                                                 fragment  => $self_struct->{fragment}
-                                                                }));
-                     }
+                     return $self unless (defined($wself_struct->{authority}) &&
+                                          defined($wbase_struct->{authority}) &&
+                                          $wself_struct->{authority} eq $wbase_struct->{authority});
                      #
                      # The algorithm is first on directories, derived from segments (for very last segment see below)
                      #
@@ -988,82 +979,58 @@ role {
                      # and any element in @base_segments is transformed to a parent location.
                      # But if it is empty, it is possible that there is equality.
                      #
-                     my @parent_locations;
-                     if (0) {                  # TEST TEST
-                       if (@wbase_dirs) {
-                         @parent_locations = map { $self->parent_location } 0..$#wbase_dirs;
-                       } else {
-                         if ((defined($wbase_basename) && ! defined($wself_basename)) ||
-                             (defined($wself_basename) && ! defined($wbase_basename)) ||
-                             (defined($wself_basename) && defined($wbase_basename) && ($wself_basename ne $wbase_basename))) {
-                           @parent_locations = ( $self->parent_location );
-                         } else {
-                           #
-                           # If $self has no basename, insert a current_location if there is no remaining segment
-                           #
-                           if (! defined($wself_basename)) {
-                             if (! @wself_dirs) {
-                               @parent_locations = ( $self->current_location );
-                             } else {
-                               @parent_locations = ();
-                             }
-                           } else {
-                             @parent_locations = ();
-                           }
-                         }
-                       }
-                     }
-                     @parent_locations = map { $self->parent_location } 0..$#wbase_dirs;
-                     my $prefix = '';
-                     if (scalar(@wbase_dirs) == $orig_nb_base_segments) {
+                     my @parent_locations = map { $self->parent_location } 0..$#wbase_dirs;
+                     if (! @parent_locations) {
                        #
-                       # Some fine tuning: suppose we move up to the beginning of the path ? Then
-                       # per def we can change all parent locations by a single '/'...
+                       # Same location !
+                       # Do base and self share the same last segment ?
                        #
-                       $prefix = '/';
-                       @parent_locations = ();
-                     } elsif (! @parent_locations) {
-                       if (0) {                            # TEST TEST
+                       if (defined($wself_base) && defined($wbase_base) && $wself_base eq $wbase_base) {
                          #
-                         # Same location !
-                         # Do base and self share the same last segment ?
+                         # Yes: remove it from wself_basename
                          #
-                         if (defined($wself_base) && defined($wbase_base) && $wself_base eq $wbase_base) {
+                         substr($wself_basename, 0, length($wself_base), '');
+                         #
+                         # Same query ?
+                         #
+                         if (defined($wself_query) && defined($wbase_query) && $wself_query eq $wbase_query) {
                            #
                            # Yes: remove it from wself_basename
                            #
-                           substr($wself_basename, 0, length($wself_base), '');
+                           substr($wself_basename, 0, 1 + length($wself_query), '');  # 1 because of the implicit '?'
                            #
-                           # Let's got further... Same query ?
+                           # Same fragment ?
                            #
-                           if (defined($wself_query) && defined($wbase_query) && $wself_query eq $wbase_query) {
+                           if (defined($wself_fragment) && defined($wbase_fragment) && $wself_fragment eq $wbase_fragment) {
                              #
                              # Yes: remove it from wself_basename
                              #
-                             substr($wself_basename, 0, 1 + length($wself_query), '');  # 1 because of the implicit '?'
+                             substr($wself_basename, 0, 1 + length($wself_fragment), '');  # 1 because of the implicit '#'
                            }
                          }
                        }
                      }
                      #
-                     # Finally the relative URL is @parent_locations, @wself_dirs and eventual $self_basename
+                     # Finally the relative URL is @parent_locations, @wself_dirs and eventual full $wself_basename
                      #
-                     my $opaque = $prefix;
-                     $opaque    .= join('', map { $_ . '/' } (@parent_locations, @wself_dirs));
-                     my %R = ( opaque => $opaque );
+                     my $opaque = join('/', @parent_locations, @wself_dirs);
+                     $opaque .= '/' if length $opaque;
                      if (defined $wself_basename) {
-                       $R{opaque}  .= $wself_basename;
+                       $opaque  .= $wself_basename;
                      } else {
                        #
-                       # No self's basename: remove last '/' unless $self had one
+                       # No basename: remove last '/' unless $self had one
                        #
-                       substr($R{opaque}, -1, 1, '') unless $have_slash;
+                       substr($opaque, -1, 1, '') unless $have_slash;
                      }
-                     if (! length $R{opaque}) {
-                       $R{opaque}  = $self->current_location;
-                       $R{opaque} .= '/' if $have_slash;
+                     if (! length $opaque) {
+                       #
+                       # Nothing: put at least current location and eventual slash
+                       #
+                       $opaque  = $self->current_location;
+                       $opaque .= '/' if $have_slash;
                      }
-                     my $rc = $top->new(__PACKAGE__->_recompose(\%R));
+                     my $rc = $top->new(__PACKAGE__->_recompose({opaque => $opaque}));
                      $rc
                    }
                   );
