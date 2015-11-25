@@ -378,6 +378,7 @@ role {
   my $_NORMALIZED_STRUCT = _NORMALIZED_STRUCT;
   my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
   my $is_common          = $type eq '_common';
+  my $is_generic         = $type eq '_generic';
   my $__PACKAGE__        = __PACKAGE__;
   #
   # A bnf package must provide correspondance between grammar symbols
@@ -1253,7 +1254,7 @@ IS_RELATIVE
     # Version using hashes:
     next if ! grep { $_ eq $component} @all_fields;
     #
-    # Fields used for recomposition at always limited to scheme+opaque+fragment if:
+    # Fields used for recomposition are always limited to scheme+opaque+fragment if:
     # - current component is opaque, or
     # - current structure is common
     my @recompose_fields = (($component eq 'opaque') || $is_common) ? qw/scheme opaque fragment/ : qw/scheme authority path query fragment/;
@@ -1278,6 +1279,42 @@ foreach (qw/@recompose_fields/) {
 (\$_[0] = $top->new($__PACKAGE__->_recompose(\\\%hash)))->$component
 COMPONENT_INLINED
     install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }");
+  }
+  #
+  # Some methods specific to the generic syntax as per original URI
+  #
+  if ($is_generic) {
+    my $path_query_inlined = <<PATH_QUERY_INLINED;
+my (\$self, \$argument) = \@_;
+#
+# Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
+#
+my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_normalized_struct : \$_[0]->_raw_struct;
+my \$value     = \$struct->{path};
+\$value       .= '?' . \$struct->{query} if defined \$struct->{query};
+return \$value unless defined \$argument;
+#
+# Always reparse
+#
+my (\$new_path, \$new_query) = (\$argument, undef);
+if (\$argument =~ m/\\?/g) {
+  my \$after_question_mark_pos = pos(\$argument);
+  \$new_path  = substr(\$argument, 0, \$after_question_mark_pos - 1);
+  \$new_query = substr(\$argument, \$after_question_mark_pos, length(\$argument) - \$after_question_mark_pos);
+}
+my \%hash = (
+              scheme    => \$struct->{scheme},
+              authority => \$struct->{authority},
+              path      => \$new_path,
+              query     => \$new_query,
+              fragment  => \$struct->{fragment}
+            );
+#
+# Rebless and call us without argument
+#
+(\$_[0] = $top->new($__PACKAGE__->_recompose(\\\%hash)))->path_query
+PATH_QUERY_INLINED
+    install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
   }
 };
 
