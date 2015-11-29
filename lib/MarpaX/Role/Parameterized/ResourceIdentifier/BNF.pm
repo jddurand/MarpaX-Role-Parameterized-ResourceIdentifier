@@ -89,7 +89,8 @@ sub Generic_check { blessed($_[0]) eq $BLESS_GENERIC }
 use constant {
   RAW                         =>  0,
   NORMALIZED                  =>  1,
-  CONVERTED                   =>  2
+  ESCAPED                     =>  2,
+  CONVERTED                   =>  3
 };
 
 # ------------------------
@@ -167,10 +168,11 @@ has _structs                => ( is => 'rw',  isa => ArrayRef[Object] );
 use constant {
   _RAW_STRUCT               =>  0,
   _NORMALIZED_STRUCT        =>  1,
-  _CONVERTED_STRUCT         =>  2,
+  _ESCAPED_STRUCT           =>  2,
+  _CONVERTED_STRUCT         =>  3,
 
-  _MAX_STRUCTS              =>  2,
-  _COUNT_STRUCTS            =>  3
+  _MAX_STRUCTS              =>  3,
+  _COUNT_STRUCTS            =>  4
 };
 #
 # Just a helper for me
@@ -179,6 +181,7 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                    [
                                     'Raw structure       ',
                                     'Normalized structure',
+                                    'Escaped structure',
                                     'Converted structure '
                                    ]
                                  }
@@ -186,12 +189,13 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 #
 # Internally I use hash notation for performance
 #
-sub raw                 { $_[0]->{_structs}->[0]->{$_[1] // 'output'} }
-sub normalized          { $_[0]->{_structs}->[1]->{$_[1] // 'output'} }
-sub converted           { $_[0]->{_structs}->[2]->{$_[1] // 'output'} }
-sub normalized_scheme   { $_[0]->{_structs}->[1]->{'scheme'} }
-sub normalized_opaque   { $_[0]->{_structs}->[1]->{'opaque'} }
-sub normalized_fragment { $_[0]->{_structs}->[1]->{'fragment'} }
+sub raw                 { $_[0]->{_structs}->[       _RAW_STRUCT]->{$_[1] // 'output'} }
+sub normalized          { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{$_[1] // 'output'} }
+sub escaped             { $_[0]->{_structs}->[   _ESCAPED_STRUCT]->{$_[1] // 'output'} }
+sub converted           { $_[0]->{_structs}->[ _CONVERTED_STRUCT]->{$_[1] // 'output'} }
+sub normalized_scheme   { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'scheme'} }
+sub normalized_opaque   { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'opaque'} }
+sub normalized_fragment { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'fragment'} }
 #
 # Let's be always URI compatible for the canonical method
 #
@@ -352,6 +356,10 @@ role {
   my $bnf         = $PARAMS->{bnf};
   my $mapping     = $PARAMS->{mapping};
   my $start       = $PARAMS->{start};
+  my $unreserved  = $PARAMS->{unreserved};
+  my $reserved    = $PARAMS->{reserved};
+  my $pct_encoded = $PARAMS->{pct_encoded};
+  my $reserved_or_unreserved = qr/(?:(?:$reserved)|(?:$unreserved))/;
 
   if ($extends) {
     #
@@ -376,7 +384,10 @@ role {
   #
   my $_RAW_STRUCT        = _RAW_STRUCT;
   my $_NORMALIZED_STRUCT = _NORMALIZED_STRUCT;
+  my $_ESCAPED_STRUCT    = _ESCAPED_STRUCT;
   my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
+  my $_MAX_STRUCTS       = _MAX_STRUCTS;
+  my $_MAX_NORMALIZER    = _MAX_NORMALIZER;
   my $is_common          = $type eq '_common';
   my $is_generic         = $type eq '_generic';
   #
@@ -437,6 +448,7 @@ role {
   # This stub will be the one doing the real work, called by Marpa action
   # ---------------------------------------------------------------------
   #
+  my @structures_for_concatenation = ($_RAW_STRUCT, $_NORMALIZED_STRUCT, $_CONVERTED_STRUCT);
   my %MAPPING = %{$mapping};
   my $args2array_sub = sub {
     my ($self, $criteria, @args) = @_;
@@ -445,19 +457,34 @@ role {
     #
     my @rc = (('') x _COUNT_STRUCTS);
     #
-    # Concatenate
+    # Concatenate. All structures but the escaped.
     #
-    foreach my $istruct (0.._MAX_STRUCTS) {
+    foreach my $istruct (@structures_for_concatenation) {
       do { $rc[$istruct] .= ref($args[$_]) ? $args[$_]->[$istruct] : $args[$_] } for (0..$#args)
     }
     #
     # Normalize
     #
-    do { $rc[$_NORMALIZED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $rc[$_NORMALIZED_STRUCT]) } for 0.._MAX_NORMALIZER;
+    do { $rc[$_NORMALIZED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper->[$_]->($self, $criteria, $rc[$_NORMALIZED_STRUCT]) } for 0..$_MAX_NORMALIZER;
     #
-    # Convert
+    # Convert: there is only one conversion, IRI -> URI or URI -> IRI
     #
     $rc[$_CONVERTED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, $criteria, $rc[$_CONVERTED_STRUCT]);
+    #
+    # Escape: if current rule is pct_encoded we keep the data as is, otherwise we escape. This is not configurable.
+    #
+    if (defined($pct_encoded) && ($criteria eq $pct_encoded)) {
+      #
+      # We say to percent_decode to accept not only unreserved characters, but also reserved characters.
+      # Anything else will stay percent-encoded.
+      #
+      $rc[$_ESCAPED_STRUCT] = $self->percent_decode($rc[$_RAW_STRUCT], $reserved_or_unreserved)
+    } else {
+      #
+      # Escape only what has not already been escaped
+      #
+      do { $rc[$_ESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_ESCAPED_STRUCT] : $self->escape($args[$_]) } for (0..$#args)
+    }
 
     \@rc
   };
@@ -486,9 +513,9 @@ role {
     # For performance reason, cache all $self-> accesses
     #
     # Version using Type:
-    # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0.._MAX_STRUCTS];
+    # local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_class->new } 0..$_MAX_STRUCTS];
     # Version using hashes:
-    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_ext->(&$struct_ctor) } 0.._MAX_STRUCTS];
+    local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs           = $self->{_structs} = [map { $struct_ext->(&$struct_ctor) } 0..$_MAX_STRUCTS];
     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::normalizer_wrapper = $self->{_normalizer_wrapper}; # Ditto
     local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper  = $self->{_converter_wrapper};  # This is why it is NOT lazy
     #
@@ -525,7 +552,7 @@ role {
       $registrations{$whoami} = $r->registrations();
     }
     my $value = ${$value_ref};
-    do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0.._MAX_STRUCTS;
+    do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0..$_MAX_STRUCTS;
     #
     # No return value from parse
     #
@@ -602,9 +629,9 @@ role {
                          #
                          # Segments is special
                          #
-                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{segments}}, $array_ref->[$_]) for 0.._MAX_STRUCTS
+                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{segments}}, $array_ref->[$_]) for 0..$_MAX_STRUCTS
                        } else {
-                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for 0.._MAX_STRUCTS
+                         $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for 0..$_MAX_STRUCTS
                        }
                      }
                      $array_ref
@@ -637,17 +664,18 @@ role {
   # -------------------------------
   # Accessors to structures, fields
   # -------------------------------
-  foreach (0.._MAX_STRUCTS) {
+  foreach (0..$_MAX_STRUCTS) {
     my $what;
     if    ($_ == 0) { $what = '_raw_struct'        }
     elsif ($_ == 1) { $what = '_normalized_struct' }
-    elsif ($_ == 2) { $what = '_converted_struct'  }
+    elsif ($_ == 2) { $what = '_escaped_struct'    }
+    elsif ($_ == 3) { $what = '_converted_struct'  }
     else            { croak 'Internal error'       }
     my $inlined = "\$_[0]->{_structs}->[$_]";
     install_modifier($whoami, 'fresh', $what => eval "sub { $inlined }" );
   }
   #
-  # Converted and normalized structures contents should remain internal, not the raw struct
+  # Normalized, escaped and converted structure contents should remain internal, not the raw struct
   #
   foreach (@all_fields) {
     my $inlined = "\$_[0]->{_structs}->[$_RAW_STRUCT]->{$_}";
@@ -1315,6 +1343,95 @@ my \%hash = (
 PATH_QUERY_INLINED
     install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
   }
+  #
+  # Percent decoding, using the unreserved regexp from parameterized role,
+  # though regexp can be given explicitely as a parameter.
+  # This method must be used only on a percent-encoded string, and once only
+  # in order to not percent-decode twice. This is why there is the pct_encoded
+  # dependency in this parameterized role: the default is installing a callback
+  # to percent_decode only when the LHS in pct_encoded.
+  #
+  install_modifier($whoami, 'fresh',  percent_decode =>
+                   sub {
+                     my ($self, $string, $unreserved_regexp) = @_;
+
+                     $unreserved_regexp //= $unreserved;
+
+                     my $unescaped_ok = 1;
+                     my $unescaped;
+                     try {
+                       my $octets = '';
+                       while ($string =~ m/(?<=%)[^%]+/gp) {
+                         $octets .= chr(hex(${^MATCH}))
+                       }
+                       $unescaped = MarpaX::RFC::RFC3629->new($octets)->output
+                     } catch {
+                       $unescaped_ok = 0;
+                       return
+                     };
+                     #
+                     # Keep only characters in the unreserved_regexp set
+                     #
+                     if ($unescaped_ok) {
+                       my $decoded_string = '';
+                       my $position_in_original_value = 0;
+                       my $reescaped_ok = 1;
+                       foreach (split('', $unescaped)) {
+                         my $reencoded_length;
+                         try {
+                           my $character = $_;
+                           my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
+                           $reencoded_length = length($reencoded);
+                         } catch {
+                           $reescaped_ok = 0;
+                           return
+                         };
+                         last if (! $reescaped_ok);
+                         if ($_ =~ $unreserved_regexp) {
+                           $decoded_string .= $_;
+                         } else {
+                           $decoded_string = substr($string, $position_in_original_value, $reencoded_length);
+                         }
+                         $position_in_original_value += $reencoded_length;
+                       }
+                       $string = $decoded_string if ($reescaped_ok);
+                     }
+                     $string
+                   }
+                  );
+
+  install_modifier($whoami, 'fresh', escape =>
+                   sub {
+                     my ($self, $string, $characters_to_keep) = @_;
+
+                     $characters_to_keep //= $reserved_or_unreserved;
+                     my $escaped = '';
+                     foreach (split(//, $string)) {
+                       #
+                       # Characters to escape at those that are
+                       # not part of the unreserved set nor the reserved characters
+                       # reserved characters
+                       if ($_ =~ $characters_to_keep) {
+                         $escaped .= $_
+                       } else {
+                         my $match = $_;
+                         try {
+                           $escaped .=
+                             join('',
+                                  map {
+                                    '%' . uc(unpack('H2', $_))
+                                  } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
+                                 )
+                           } catch {
+                             $escaped .= $match;
+                             return;
+                           };
+                       }
+                     }
+                     $escaped
+                   }
+                  );
+
 };
 
 # =============================================================================
@@ -1323,22 +1440,27 @@ PATH_QUERY_INLINED
 sub percent_encode {
   my ($class, $string, $regexp) = @_;
 
-  my $encoded = $string;
-  $encoded =~ s!$regexp!
+  $string =~ s!$regexp!
     {
      #
      # ${^MATCH} is a read-only variable
      # and Encode::encode is affecting $match -;
      #
      my $match = ${^MATCH};
-     join('',
-          map {
-            '%' . uc(unpack('H2', $_))
-          } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
-         )
+     my $encoded;
+     try {
+       $encoded = join('',
+                       map {
+                         '%' . uc(unpack('H2', $_))
+                       } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
+                      )
+     } catch {
+       $encoded = $match;
+       return;
+     };
     }
     !egp;
-  $encoded
+  $string
 }
 
 sub _merge {
@@ -1396,50 +1518,6 @@ sub _recompose {
   $result .= '#'  . $T->{fragment}     if (defined $T->{fragment});
 
   $result
-}
-
-sub unescape {
-  my ($class, $value, $unreserved) = @_;
-
-  my $unescaped_ok = 1;
-  my $unescaped;
-  try {
-    my $octets = '';
-    while ($value =~ m/(?<=%)[^%]+/gp) {
-      $octets .= chr(hex(${^MATCH}))
-    }
-    $unescaped = MarpaX::RFC::RFC3629->new($octets)->output
-  } catch {
-    $unescaped_ok = 0;
-    return
-  };
-  #
-  # Keep only characters in the unreserved set
-  #
-  if ($unescaped_ok) {
-    my $new_value = '';
-    my $position_in_original_value = 0;
-    my $reescaped_ok = 1;
-    foreach (split('', $unescaped)) {
-      my $reencoded_length;
-      try {
-        my $character = $_;
-        my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
-        $reencoded_length = length($reencoded);
-      } catch {
-        $reescaped_ok = 0;
-      };
-      last if (! $reescaped_ok);
-      if ($_ =~ $unreserved) {
-        $new_value .= $_;
-      } else {
-        $new_value = substr($value, $position_in_original_value, $reencoded_length);
-      }
-      $position_in_original_value += $reencoded_length;
-    }
-    $value = $new_value if ($reescaped_ok);
-  }
-  $value
 }
 
 # =============================================================================

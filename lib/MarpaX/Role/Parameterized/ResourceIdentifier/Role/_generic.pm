@@ -101,18 +101,7 @@ around build_percent_encoding_normalizer => sub {
   # percent-encoded octet sequence that corresponds to an unreserved
   # character, as described in section 2.3 of [RFC3986].
   #
-  if (defined $self->pct_encoded) {
-    #
-    # Inlined version for performance
-    # The non-inlined version is:
-    # $rc->{$self->pct_encoded} = sub { $_[0]->unescape($_[2], $self->unreserved) };
-    #
-    my $regexp = $self->unreserved;
-    my $inlined = <<INLINED;
-\$_[0]->unescape(\$_[2], qr/$regexp/)
-INLINED
-    $rc->{$self->pct_encoded} = eval "sub { $inlined }";
-  }
+  $rc->{$self->pct_encoded} = sub { $_[0]->percent_decode($_[2]) } if (defined $self->pct_encoded);
   $rc
 };
 
