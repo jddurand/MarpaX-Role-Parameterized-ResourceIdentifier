@@ -1290,7 +1290,7 @@ my (\$self, \$argument) = \@_;
 #
 # Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
 #
-my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_normalized_struct : \$_[0]->_raw_struct;
+my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct : \$_[0]->_raw_struct;
 my \$value     = \$struct->{$component};
 return \$value unless defined \$argument;
 #
@@ -1316,7 +1316,7 @@ my (\$self, \$argument) = \@_;
 #
 # Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
 #
-my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_normalized_struct : \$_[0]->_raw_struct;
+my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct : \$_[0]->_raw_struct;
 my \$value     = \$struct->{path};
 \$value       .= '?' . \$struct->{query} if defined \$struct->{query};
 return \$value unless defined \$argument;
