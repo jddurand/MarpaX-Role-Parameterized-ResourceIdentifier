@@ -1272,26 +1272,15 @@ EQ
   #
   # clone(): inlined
   #
-  my $clone_inlined = <<CLONE;
-$top->new(\$_[0]->{input})
-CLONE
-  install_modifier($whoami, 'fresh', clone => eval "sub { $clone_inlined }");
+  install_modifier($whoami, 'fresh', clone => eval "sub { $top->new(\$_[0]->{input}) }");
   #
   # is_absolute(): inlined
   #
-  my $is_absolute_inlined = <<IS_ABSOLUTE;
-my \$raw_struct = \$_[0]->{_structs}->[$_RAW_STRUCT];
-defined \$raw_struct->{scheme}
-IS_ABSOLUTE
-  install_modifier($whoami, 'fresh', is_absolute => eval "sub { $is_absolute_inlined }");
+  install_modifier($whoami, 'fresh', is_absolute => eval "sub { defined \$_[0]->{_structs}->[$_RAW_STRUCT]->{scheme} }");
   #
   # is_relative(): inlined
   #
-  my $is_relative_inlined = <<IS_RELATIVE;
-my \$raw_struct = \$_[0]->{_structs}->[$_RAW_STRUCT];
-! defined \$raw_struct->{scheme}
-IS_RELATIVE
-  install_modifier($whoami, 'fresh', is_relative => eval "sub { $is_relative_inlined }");
+  install_modifier($whoami, 'fresh', is_relative => eval "sub { ! defined \$_[0]->{_structs}->[$_RAW_STRUCT]->{scheme} }");
   #
   # For all these fields, always apply the same algorithm.
   # Note that opaque field always has precedence overt authority or path or query
@@ -1311,60 +1300,62 @@ IS_RELATIVE
     # - current structure is common
     my @recompose_fields = (($component eq 'opaque') || $is_common) ? qw/scheme opaque fragment/ : qw/scheme authority path query fragment/;
     my $component_inlined = <<COMPONENT_INLINED;
-my (\$self, \$argument) = \@_;
+# my (\$self, \$argument) = \@_;
 #
 # Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
 #
-my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct : \$_[0]->_raw_struct;
-my \$value     = \$struct->{$component};
-return \$value unless defined \$argument;
+if (! defined \$_[1]) {
+  return \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct->{$component} :  \$_[0]->_raw_struct->{$component}
+}
 #
 # Always reparse
 #
 my \%hash = ();
 foreach (qw/@recompose_fields/) {
-  \$hash{\$_} = (\$_ eq '$component') ? \$argument : \$struct->{\$_}
+  \$hash{\$_} = (\$_ eq '$component') ? \$_[1] : \$_[0]->_raw_struct->{\$_}
 }
 #
 # Rebless and call us without argument
 #
-(\$_[0] = $top->new(\$self->_recompose(\\\%hash)))->$component
+(\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->$component
 COMPONENT_INLINED
-    install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }");
+    install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }" || croak $@);
   }
   #
   # Some methods specific to the generic syntax as per original URI
   #
   if ($is_generic) {
     my $path_query_inlined = <<PATH_QUERY_INLINED;
-my (\$self, \$argument) = \@_;
+# my (\$self, \$argument) = \@_;
 #
 # Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
 #
-my \$struct    = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct : \$_[0]->_raw_struct;
-my \$value     = \$struct->{path};
-\$value       .= '?' . \$struct->{query} if defined \$struct->{query};
-return \$value unless defined \$argument;
+if (! defined \$_[1]) {
+  my \$uri_compat = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat;
+  my \$path  = \$uri_compat ? \$_[0]->_escaped_struct->{path} :  \$_[0]->_raw_struct->{path};
+  my \$query = \$uri_compat ? \$_[0]->_escaped_struct->{query} :  \$_[0]->_raw_struct->{query};
+  return (defined \$query) ? \$path . '?' . \$query : \$path
+}
 #
-# Always reparse
+# Rebless and call us without argument
 #
-my (\$new_path, \$new_query) = (\$argument, undef);
-if (\$argument =~ m/\\?/g) {
-  my \$after_question_mark_pos = pos(\$argument);
-  \$new_path  = substr(\$argument, 0, \$after_question_mark_pos - 1);
-  \$new_query = substr(\$argument, \$after_question_mark_pos, length(\$argument) - \$after_question_mark_pos);
+my (\$new_path, \$new_query) = (\$_[1], undef);
+if (\$_[1] =~ /\\?/g) {
+  my \$after_question_mark_pos = pos(\$_[1]);
+  \$new_path  = substr(\$_[1], 0, \$after_question_mark_pos - 1);
+  \$new_query = substr(\$_[1], \$after_question_mark_pos, length(\$_[1]) - \$after_question_mark_pos);
 }
 my \%hash = (
-              scheme    => \$struct->{scheme},
-              authority => \$struct->{authority},
+              scheme    => \$_[0]->_raw_struct->{scheme},
+              authority => \$_[0]->_raw_struct->{authority},
               path      => \$new_path,
               query     => \$new_query,
-              fragment  => \$struct->{fragment}
+              fragment  => \$_[0]->_raw_struct->{fragment}
             );
 #
 # Rebless and call us without argument
 #
-(\$_[0] = $top->new(\$self->_recompose(\\\%hash)))->path_query
+(\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->path_query
 PATH_QUERY_INLINED
     install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
   }
