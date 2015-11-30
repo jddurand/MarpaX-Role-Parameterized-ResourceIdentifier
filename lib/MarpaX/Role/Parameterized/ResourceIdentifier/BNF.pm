@@ -1344,18 +1344,14 @@ PATH_QUERY_INLINED
     install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
   }
   #
-  # Percent decoding, using the unreserved regexp from parameterized role,
-  # though regexp can be given explicitely as a parameter.
-  # This method must be used only on a percent-encoded string, and once only
-  # in order to not percent-decode twice. This is why there is the pct_encoded
-  # dependency in this parameterized role: the default is installing a callback
-  # to percent_decode only when the LHS in pct_encoded.
+  # Percent decoding. Should be used ONLY on the right-hande side of
+  # a pct_encoded rule.
   #
   install_modifier($whoami, 'fresh',  percent_decode =>
                    sub {
-                     my ($self, $string, $unreserved_regexp) = @_;
+                     my ($self, $string, $characters_to_keep) = @_;
 
-                     $unreserved_regexp //= $unreserved;
+                     $characters_to_keep //= $reserved_or_unreserved;
 
                      my $unescaped_ok = 1;
                      my $unescaped;
@@ -1366,6 +1362,7 @@ PATH_QUERY_INLINED
                        }
                        $unescaped = MarpaX::RFC::RFC3629->new($octets)->output
                      } catch {
+                       $self->_logger->tracef('%s', "$_");
                        $unescaped_ok = 0;
                        return
                      };
@@ -1383,11 +1380,12 @@ PATH_QUERY_INLINED
                            my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
                            $reencoded_length = length($reencoded);
                          } catch {
+                           $self->_logger->tracef('%s', "$_");
                            $reescaped_ok = 0;
                            return
                          };
                          last if (! $reescaped_ok);
-                         if ($_ =~ $unreserved_regexp) {
+                         if ($_ =~ $characters_to_keep) {
                            $decoded_string .= $_;
                          } else {
                            $decoded_string = substr($string, $position_in_original_value, $reencoded_length);
@@ -1400,6 +1398,41 @@ PATH_QUERY_INLINED
                    }
                   );
 
+  #
+  # Percent encoding. Encode all characters of a string matching a given regexp.
+  #
+  install_modifier($whoami, 'fresh', percent_encode =>
+                   sub {
+                     my ($self, $string, $characters_to_encode) = @_;
+
+                     $string =~ s!$characters_to_encode!
+                       {
+                        #
+                        # ${^MATCH} is a read-only variable
+                        # and Encode::encode is affecting $match -;
+                        #
+                        my $match = ${^MATCH};
+                        my $encoded;
+                        try {
+                          $encoded = join('',
+                                          map {
+                                            '%' . uc(unpack('H2', $_))
+                                          } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
+                                         )
+                        } catch {
+                          $self->_logger->tracef('%s', "$_");
+                          $encoded = $match;
+                          return;
+                        };
+                       }
+                       !egp;
+                     $string
+                   }
+                  );
+  #
+  # Escape. Encode all characters of a string not matching a given regexp.
+  # This is nothing else but percent_encode() using a regexp doing the reverse.
+  #
   install_modifier($whoami, 'fresh', escape =>
                    sub {
                      my ($self, $string, $characters_to_keep) = @_;
@@ -1423,6 +1456,7 @@ PATH_QUERY_INLINED
                                   } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
                                  )
                            } catch {
+                             $self->_logger->tracef('%s', "$_");
                              $escaped .= $match;
                              return;
                            };
@@ -1432,36 +1466,37 @@ PATH_QUERY_INLINED
                    }
                   );
 
+  #
+  # Unescape. Decode all %HH sequences of a string keeping only characters matching a given regexp.
+  # Basically this routine is searching for all %HH sequences and applies percent_decode on them.
+  #
+  install_modifier($whoami, 'fresh', unescape =>
+                   sub {
+                     my ($self, $string, $characters_to_keep) = @_;
+
+                     $characters_to_keep //= $reserved_or_unreserved;
+
+                     my $output = '';
+                     my $previous_pos = 0;
+                     my $remaining = length($string);
+                     while ($string =~ m/(?:%[^%]+)+/gcp) {
+                       if ($-[0] > $previous_pos) {
+                         $output .= substr($string, $previous_pos, $-[0] - $previous_pos);
+                         $output .= $self->percent_decode(${^MATCH}, $characters_to_keep);
+                       }
+                       $previous_pos = $-[0];
+                       $remaining -= length(${^MATCH});
+                     }
+                     $output .= substr($string, $previous_pos, $remaining) if $remaining;
+                     $output
+                   }
+                  );
+
 };
 
 # =============================================================================
 # Class methods
 # =============================================================================
-sub percent_encode {
-  my ($class, $string, $regexp) = @_;
-
-  $string =~ s!$regexp!
-    {
-     #
-     # ${^MATCH} is a read-only variable
-     # and Encode::encode is affecting $match -;
-     #
-     my $match = ${^MATCH};
-     my $encoded;
-     try {
-       $encoded = join('',
-                       map {
-                         '%' . uc(unpack('H2', $_))
-                       } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
-                      )
-     } catch {
-       $encoded = $match;
-       return;
-     };
-    }
-    !egp;
-  $string
-}
 
 sub _merge {
   my ($class, $base, $ref) = @_;
