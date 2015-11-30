@@ -157,6 +157,7 @@ has secure                          => ( is => 'ro',  isa => Bool,        lazy =
 has reg_name_convert_as_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_convert_as_domain_name' );
 has current_location                => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_current_location' );
 has parent_location                 => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_parent_location' );
+has separator_location              => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_separator_location' );
 __PACKAGE__->_generate_attributes('normalizer', @normalizer_names);
 __PACKAGE__->_generate_attributes('converter',  @converter_names);
 
@@ -218,7 +219,8 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
                                                 is_character_normalized         => Optional[Bool],
                                                 reg_name_convert_as_domain_name => Optional[Bool],
                                                 current_location                => Optional[Str],
-                                                parent_location                 => Optional[Str]
+                                                parent_location                 => Optional[Str],
+                                                separator_location              => Optional[Str]
                                                ]);
 # -------------
 # The overloads
@@ -302,6 +304,12 @@ sub BUILD {
   my $converter_wrapper_call_lazy_builder = $self->_converter_wrapper_call_lazy_builder;
   my $_converter_indice = $self->_converter_indice;
   $converter_wrapper_call_lazy_builder->[$_converter_indice]->($self, '', '');
+  #
+  # Locations
+  #
+  $self->current_location;
+  $self->parent_location;
+  $self->separator_location;
   #
   # Parse the input
   #
@@ -654,9 +662,11 @@ role {
   if ($is_common) {
     install_modifier($whoami, 'fresh', build_current_location              => sub {                  undef });
     install_modifier($whoami, 'fresh', build_parent_location               => sub {                  undef });
+    install_modifier($whoami, 'fresh', build_separator_location            => sub {                  undef });
   } else {
     install_modifier($whoami, 'fresh', build_current_location              => sub {                    '.' });
     install_modifier($whoami, 'fresh', build_parent_location               => sub {                   '..' });
+    install_modifier($whoami, 'fresh', build_separator_location            => sub {                    '/' });
   }
   foreach (@normalizer_names, @converter_names) {
     install_modifier($whoami, 'fresh', "build_$_"                          => sub {              return {} });
@@ -711,9 +721,15 @@ role {
                        # components and the output buffer is initialized to the empty
                        # string.
                        #
-                       my $parent_location = $self->parent_location;
+                       my $parent_location = $self->{parent_location};
+                       return $input if (! defined($parent_location));
                        my $parent_location_RE = quotemeta($parent_location);
-                       my $current_location = $self->current_location;
+
+                       my $current_location = $self->{current_location};
+                       return $input if (! defined($current_location));
+
+                       my $separator_location = $self->{separator_location};
+                       return $input if (! defined($separator_location));
 
                        my $output = '';
                        my $remove_last_segment_in_output = sub {
@@ -737,18 +753,18 @@ role {
                            #
                            # If nothing was removed, it is in excess
                            #
-                           if (length($output) && substr($output, -1, 1) eq '/') {
+                           if (length($output) && substr($output, -1, 1) eq $separator_location) {
                              #
                              # Output already end with a '/'
                              #
-                             $output .=       $parent_location;
+                             $output .=                       $parent_location;
                            } else {
-                             $output .= '/' . $parent_location;
+                             $output .= $separator_location . $parent_location;
                            }
                            #
                            # Push the eventual trailing character
                            #
-                           $output .= '/' if $_[0];
+                           $output .= $separator_location if $_[0];
                          }
                        };
                        my $process_current_location = sub {
@@ -757,7 +773,7 @@ role {
                          #
                          if (! $remote_leading_dots) {
                            if (length($output)) {
-                             if (substr($output, -1, 1) eq '/') {
+                             if (substr($output, -1, 1) eq $separator_location) {
                                #
                                # Output already end with a '/': no op regardless of $_[0]
                                #
@@ -765,13 +781,13 @@ role {
                                #
                                # Output does not end with a '/': add '/' if $_[0]
                                #
-                               $output .= '/' if $_[0];
+                               $output .= $separator_location if $_[0];
                              }
                            } else {
                              #
                              # Output is empty: no op unless there is a trailing slash, i.e. '/./'
                              #
-                             $output = '/' . $current_location . '/' if $_[0];
+                             $output = $separator_location . $current_location . $separator_location if $_[0];
                            }
                          }
                        };
@@ -779,7 +795,7 @@ role {
                          #
                          # $_[0] contains the current segment
                          #
-                         if (length($output) && substr($output, -1, 1) eq '/' && substr($_[0], 0, 1) eq '/') {
+                         if (length($output) && (substr($output, -1, 1) eq $separator_location) && (substr($_[0], 0, 1) eq $separator_location)) {
                            #
                            # segment start with a '/' and output already end with a '/'
                            #
@@ -798,15 +814,15 @@ role {
                        #
                        # 2.  While the input buffer is not empty, loop as follows:
                        #
-                       my $A1 = $parent_location . '/';
-                       my $A2 = $current_location . '/';
+                       my $A1 = $parent_location . $separator_location;
+                       my $A2 = $current_location . $separator_location;
 
-                       my $B1 = '/' . $current_location . '/';
-                       my $B2 = '/' . $current_location;
+                       my $B1 = $separator_location . $current_location . $separator_location;
+                       my $B2 = $separator_location . $current_location;
                        my $B2_RE = quotemeta($B2);
 
-                       my $C1 = '/' . $parent_location . '/';
-                       my $C2 = '/' . $parent_location;
+                       my $C1 = $separator_location . $parent_location . $separator_location;
+                       my $C2 = $separator_location . $parent_location;
                        my $C2_RE = quotemeta($C2);
 
                        my $D1 = $current_location;
@@ -819,11 +835,11 @@ role {
                          #
                          if (index($input, $A1) == 0) {
                            # $substep = 'A1';
-                           substr($input, 0, length($A1), ''), &$process_parent_location('/')
+                           substr($input, 0, length($A1), ''), &$process_parent_location($separator_location)
                          }
                          elsif (index($input, $A2) == 0) {
                            # $substep = 'A2';
-                           substr($input, 0, length($A2), ''), &$process_current_location('/')
+                           substr($input, 0, length($A2), ''), &$process_current_location($separator_location)
                          }
                          #
                          # B. if the input buffer begins with a prefix of "/./" or "/.",
@@ -832,11 +848,11 @@ role {
                          #
                          elsif (index($input, $B1) == 0) {
                            # $substep = 'B1';
-                           substr($input, 0, length($B1), '/'), &$process_current_location('/')
+                           substr($input, 0, length($B1), $separator_location), &$process_current_location($separator_location)
                          }
                          elsif ($input =~ /^$B2_RE(?:\/|\z)/) {            # (?:\/|\z) means this is a complete path segment
                            # $substep = 'B2';
-                           substr($input, 0, length($B2), '/'), &$process_current_location
+                           substr($input, 0, length($B2), $separator_location), &$process_current_location
                          }
                          #
                          # C. if the input buffer begins with a prefix of "/../" or "/..",
@@ -847,11 +863,11 @@ role {
                          #
                          elsif (index($input, $C1) == 0) {
                            # $substep = 'C1';
-                           substr($input, 0, length($C1), '/'), &$process_parent_location('/')
+                           substr($input, 0, length($C1), $separator_location), &$process_parent_location($separator_location)
                          }
                          elsif ($input =~ /^$C2_RE(?:\/|\z)/) {          # (?:\/|\z) means this is a complete path segment
                            # $substep = 'C2';
-                           substr($input, 0, length($C2), '/'), &$process_parent_location
+                           substr($input, 0, length($C2), $separator_location), &$process_parent_location
                          }
                          #
                          # D. if the input buffer consists only of "." or "..", then remove
@@ -926,7 +942,10 @@ role {
                      #
                      # Nothing to do if self and base do not share the same notion of parent_location
                      #
-                     return $self unless $self->parent_location eq $base_ri->parent_location;
+                     return $self unless
+                       defined($self->{parent_location})    &&
+                       defined($base_ri->{parent_location}) &&
+                       ($self->{parent_location} eq $base_ri->{parent_location});
                      #
                      # Get the raw and normalized results: normalized is used for all logical ops
                      #
@@ -940,6 +959,10 @@ role {
                      # Nothing to do if neither self or base comply both with the generic syntax
                      #
                      return $self unless Generic_check($self_struct) && Generic_check($base_struct);
+                     #
+                     # Nothing to do if neither self or base comply have the same separator location
+                     #
+                     return $self unless $self->{separator_location} eq $base_ri->{separator_location};
                      #
                      # Nothing to do if self and base do not share the same scheme
                      #
@@ -1003,7 +1026,7 @@ role {
                      # and any element in @base_segments is transformed to a parent location.
                      # But if it is empty, it is possible that there is equality.
                      #
-                     my @parent_locations = map { $self->parent_location } 0..$#wbase_dirs;
+                     my @parent_locations = map { $self->{parent_location} } 0..$#wbase_dirs;
                      if (! @parent_locations) {
                        #
                        # Same location !
@@ -1037,8 +1060,8 @@ role {
                      #
                      # Finally the relative URL is @parent_locations, @wself_dirs and eventual full $wself_basename
                      #
-                     my $opaque = join('/', @parent_locations, @wself_dirs);
-                     $opaque .= '/' if length $opaque;
+                     my $opaque = join($self->{separator_location}, @parent_locations, @wself_dirs);
+                     $opaque .= $self->{separator_location} if length $opaque;
                      if (defined $wself_basename) {
                        $opaque  .= $wself_basename;
                      } else {
@@ -1051,8 +1074,8 @@ role {
                        #
                        # Nothing: put at least current location and eventual slash
                        #
-                       $opaque  = $self->current_location;
-                       $opaque .= '/' if $have_slash;
+                       $opaque  = $self->{current_location};
+                       $opaque .= $self->{separator_location} if $have_slash;
                      }
                      my $rc = $top->new(__PACKAGE__->_recompose({opaque => $opaque}));
                      $rc
@@ -1116,13 +1139,15 @@ role {
                      return $self unless $base_ri->is_absolute;
                      #
                      # The rest will work only if self and base share the same notions of
-                     # current_location and parent_location
+                     # current_location, parent_location and separator_location
                      #
                      return $self unless
-                       defined($self->current_location)    && defined($self->parent_location)    &&
-                       defined($base_ri->current_location) && defined($base_ri->parent_location) &&
-                       $self->current_location eq $base_ri->current_location                     &&
-                       $self->parent_location  eq $base_ri->parent_location
+                       defined($self->{current_location})    && defined($self->{parent_location})         &&
+                       defined($base_ri->{current_location}) && defined($base_ri->{parent_location})      &&
+                       defined($base_ri->{separator_location}) && defined($base_ri->{separator_location}) &&
+                       $self->{current_location}   eq $base_ri->{current_location}                        &&
+                       $self->{parent_location}    eq $base_ri->{parent_location}                         &&
+                       $self->{separator_location} eq $base_ri->{separator_location}
                        ;
                      #
                      # Normalized version is used for all logical ops
@@ -1210,7 +1235,7 @@ role {
                            $T{path} = $wBase{path};
                            $T{query} = Undef->check($R{query}) ? $wBase{query} : $R{query};
                          } else {
-                           if (substr($R{path}, 0, 1) eq '/') {
+                           if (substr($R{path}, 0, 1) eq $self->{separator_location}) {
                              $T{path} = $self->remove_dot_segments($R{path}, $remote_leading_dots);
                            } else {
                              $T{path} = __PACKAGE__->_merge(\%wBase, \%R);
@@ -1510,7 +1535,7 @@ sub _merge {
   # reference's path; otherwise,
   #
   if (defined($base->{authority}) && ! length($base->{path})) {
-    return '/' . $ref->{path};
+    return $ref->{separator_location} . $ref->{path};
   }
   #
   # return a string consisting of the reference's path component
