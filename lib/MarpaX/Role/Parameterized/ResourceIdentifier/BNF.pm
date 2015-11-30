@@ -1465,6 +1465,14 @@ PATH_SEGMENTS_INLINED
                      # Keep only characters in the $characters_to_decode regexp set, if set
                      #
                      if ($unescaped_ok) {
+                       #
+                       # No need to recover escaped sequences in $characters_to_decode is undef:
+                       # we want everything
+                       #
+                       return $unescaped if ! defined($characters_to_decode);
+                       #
+                       # We want to keep only what matches $characters_to_decode
+                       #
                        my $decoded_string = '';
                        my $position_in_original_value = 0;
                        my $reescaped_ok = 1;
@@ -1480,7 +1488,7 @@ PATH_SEGMENTS_INLINED
                            return
                          };
                          last if (! $reescaped_ok);
-                         if (! defined($characters_to_decode) || ($_ =~ $characters_to_decode)) {
+                         if ($_ =~ $characters_to_decode) {
                            $decoded_string .= $_;
                          } else {
                            $decoded_string = substr($string, $position_in_original_value, $reencoded_length);
