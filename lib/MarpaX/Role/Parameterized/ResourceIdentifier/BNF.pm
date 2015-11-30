@@ -14,6 +14,7 @@ use Class::Method::Modifiers qw/install_modifier/;
 use Encode 2.21 qw/find_encoding encode decode/; # 2.21 for mime_name support
 use Marpa::R2;
 use MarpaX::RFC::RFC3629;
+use MarpaX::Role::Parameterized::ResourceIdentifier::Impl::_segment;
 use MarpaX::Role::Parameterized::ResourceIdentifier::MarpaTrace;
 use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 # use MarpaX::Role::Parameterized::ResourceIdentifier::Types qw/Common Generic/; # I moved to hash see below
@@ -90,7 +91,8 @@ use constant {
   RAW                         =>  0,
   NORMALIZED                  =>  1,
   ESCAPED                     =>  2,
-  CONVERTED                   =>  3
+  UNESCAPED                   =>  3,
+  CONVERTED                   =>  4
 };
 
 # ------------------------
@@ -149,15 +151,14 @@ has is_character_normalized => ( is => 'rwp', isa => Bool,        default => sub
 #
 # Implementations should 'around' the folllowings
 #
-has pct_encoded                     => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_pct_encoded' );
-has reserved                        => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_reserved' );
-has unreserved                      => ( is => 'ro',  isa => RegexpRef,   lazy => 1, builder => 'build_unreserved' );
-has default_port                    => ( is => 'ro',  isa => Int|Undef,   lazy => 1, builder => 'build_default_port' );
-has secure                          => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_secure' );
-has reg_name_convert_as_domain_name => ( is => 'ro',  isa => Bool,        lazy => 1, builder => 'build_reg_name_convert_as_domain_name' );
-has current_location                => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_current_location' );
-has parent_location                 => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_parent_location' );
-has separator_location              => ( is => 'ro',  isa => Str|Undef,   lazy => 1, builder => 'build_separator_location' );
+has pct_encoded                     => ( is => 'ro',  isa => Str|Undef,       lazy => 1, builder => 'build_pct_encoded' );
+has unreserved                      => ( is => 'ro',  isa => RegexpRef|Undef, lazy => 1, builder => 'build_unreserved' );
+has default_port                    => ( is => 'ro',  isa => Int|Undef,       lazy => 1, builder => 'build_default_port' );
+has secure                          => ( is => 'ro',  isa => Bool,            lazy => 1, builder => 'build_secure' );
+has reg_name_convert_as_domain_name => ( is => 'ro',  isa => Bool,            lazy => 1, builder => 'build_reg_name_convert_as_domain_name' );
+has current_location                => ( is => 'ro',  isa => Str|Undef,       lazy => 1, builder => 'build_current_location' );
+has parent_location                 => ( is => 'ro',  isa => Str|Undef,       lazy => 1, builder => 'build_parent_location' );
+has separator_location              => ( is => 'ro',  isa => Str|Undef,       lazy => 1, builder => 'build_separator_location' );
 __PACKAGE__->_generate_attributes('normalizer', @normalizer_names);
 __PACKAGE__->_generate_attributes('converter',  @converter_names);
 
@@ -170,10 +171,11 @@ use constant {
   _RAW_STRUCT               =>  0,
   _NORMALIZED_STRUCT        =>  1,
   _ESCAPED_STRUCT           =>  2,
-  _CONVERTED_STRUCT         =>  3,
+  _UNESCAPED_STRUCT         =>  3,
+  _CONVERTED_STRUCT         =>  4,
 
-  _MAX_STRUCTS              =>  3,
-  _COUNT_STRUCTS            =>  4
+  _MAX_STRUCTS              =>  4,
+  _COUNT_STRUCTS            =>  5
 };
 #
 # Just a helper for me
@@ -183,6 +185,7 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                     'Raw structure       ',
                                     'Normalized structure',
                                     'Escaped structure',
+                                    'Unescaped structure',
                                     'Converted structure '
                                    ]
                                  }
@@ -193,6 +196,7 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
 sub raw                 { $_[0]->{_structs}->[       _RAW_STRUCT]->{$_[1] // 'output'} }
 sub normalized          { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{$_[1] // 'output'} }
 sub escaped             { $_[0]->{_structs}->[   _ESCAPED_STRUCT]->{$_[1] // 'output'} }
+sub unescaped           { $_[0]->{_structs}->[ _UNESCAPED_STRUCT]->{$_[1] // 'output'} }
 sub converted           { $_[0]->{_structs}->[ _CONVERTED_STRUCT]->{$_[1] // 'output'} }
 sub normalized_scheme   { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'scheme'} }
 sub normalized_opaque   { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'opaque'} }
@@ -328,8 +332,7 @@ our $check_params = compile(
                                  top         => Str,
                                  bnf         => Str,
                                  start       => Str,
-                                 reserved    => RegexpRef,
-                                 unreserved  => RegexpRef,
+                                 unreserved  => RegexpRef|Undef,
                                  pct_encoded => Str|Undef,
                                  mapping     => HashRef[Str],
                                  struct_ext  => Optional[CodeRef],
@@ -365,9 +368,7 @@ role {
   my $mapping     = $PARAMS->{mapping};
   my $start       = $PARAMS->{start};
   my $unreserved  = $PARAMS->{unreserved};
-  my $reserved    = $PARAMS->{reserved};
   my $pct_encoded = $PARAMS->{pct_encoded};
-  my $reserved_or_unreserved = qr/(?:(?:$reserved)|(?:$unreserved))/;
 
   if ($extends) {
     #
@@ -393,6 +394,7 @@ role {
   my $_RAW_STRUCT        = _RAW_STRUCT;
   my $_NORMALIZED_STRUCT = _NORMALIZED_STRUCT;
   my $_ESCAPED_STRUCT    = _ESCAPED_STRUCT;
+  my $_UNESCAPED_STRUCT  = _UNESCAPED_STRUCT;
   my $_CONVERTED_STRUCT  = _CONVERTED_STRUCT;
   my $_MAX_STRUCTS       = _MAX_STRUCTS;
   my $_MAX_NORMALIZER    = _MAX_NORMALIZER;
@@ -465,7 +467,7 @@ role {
     #
     my @rc = (('') x _COUNT_STRUCTS);
     #
-    # Concatenate. All structures but the escaped.
+    # Concatenate. All structures but the escaped and unescaped.
     #
     foreach my $istruct (@structures_for_concatenation) {
       do { $rc[$istruct] .= ref($args[$_]) ? $args[$_]->[$istruct] : $args[$_] } for (0..$#args)
@@ -479,19 +481,33 @@ role {
     #
     $rc[$_CONVERTED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, $criteria, $rc[$_CONVERTED_STRUCT]);
     #
-    # Escape: if current rule is pct_encoded we keep the data as is, otherwise we escape. This is not configurable.
+    # Escape
     #
     if (defined($pct_encoded) && ($criteria eq $pct_encoded)) {
       #
-      # We say to percent_decode to accept not only unreserved characters, but also reserved characters.
-      # Anything else will stay percent-encoded.
+      # Say to percent_decode() to unescape only characters in the unreserved set.
+      # Everything else remains escaped, which is ok.
       #
-      $rc[$_ESCAPED_STRUCT] = $self->percent_decode($rc[$_RAW_STRUCT], $reserved_or_unreserved)
+      $rc[$_ESCAPED_STRUCT] = $self->percent_decode($rc[$_RAW_STRUCT], $unreserved);
     } else {
       #
       # Escape only what has not already been escaped
       #
       do { $rc[$_ESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_ESCAPED_STRUCT] : $self->escape($args[$_]) } for (0..$#args)
+    }
+    #
+    # Unescape
+    #
+    if (defined($pct_encoded) && ($criteria eq $pct_encoded)) {
+      #
+      # Say to percent_decode() to unescape everything.
+      #
+      $rc[$_UNESCAPED_STRUCT] = $self->percent_decode($rc[$_RAW_STRUCT], qr/./s);
+    } else {
+      #
+      # Nothing to unescape outside of pct_encoded
+      #
+      do { $rc[$_UNESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_ESCAPED_STRUCT] : $args[$_] } for (0..$#args)
     }
 
     \@rc
@@ -654,7 +670,6 @@ role {
   # The builders that the implementation should 'around'
   # ----------------------------------------------------
   install_modifier($whoami, 'fresh', build_pct_encoded                     => sub { $PARAMS->{pct_encoded} });
-  install_modifier($whoami, 'fresh', build_reserved                        => sub {    $PARAMS->{reserved} });
   install_modifier($whoami, 'fresh', build_unreserved                      => sub {  $PARAMS->{unreserved} });
   install_modifier($whoami, 'fresh', build_default_port                    => sub {                  undef });
   install_modifier($whoami, 'fresh', build_secure                          => sub {                    !!0 });
@@ -679,7 +694,8 @@ role {
     if    ($_ == 0) { $what = '_raw_struct'        }
     elsif ($_ == 1) { $what = '_normalized_struct' }
     elsif ($_ == 2) { $what = '_escaped_struct'    }
-    elsif ($_ == 3) { $what = '_converted_struct'  }
+    elsif ($_ == 3) { $what = '_unescaped_struct'  }
+    elsif ($_ == 4) { $what = '_converted_struct'  }
     else            { croak 'Internal error'       }
     my $inlined = "\$_[0]->{_structs}->[$_]";
     install_modifier($whoami, 'fresh', $what => eval "sub { $inlined }" );
@@ -1359,15 +1375,20 @@ my \%hash = (
 PATH_QUERY_INLINED
     install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
   }
+  # =============================================================================================
+  # percent_decode
   #
-  # Percent decoding. Should be used ONLY on the right-hande side of
-  # a pct_encoded rule.
+  # One required parameter: The string to unescape/percent-decode
+  # One optional parameter: The set of characters to accept. If undef this will decode everything
+  # =============================================================================================
+  #
+  # Core routine to use only of the RHS of a pct_encoded rule
   #
   install_modifier($whoami, 'fresh',  percent_decode =>
                    sub {
                      my ($self, $string, $characters_to_keep) = @_;
 
-                     $characters_to_keep //= $reserved_or_unreserved;
+                     $characters_to_keep //= qr/./s;
 
                      my $unescaped_ok = 1;
                      my $unescaped;
@@ -1383,7 +1404,7 @@ PATH_QUERY_INLINED
                        return
                      };
                      #
-                     # Keep only characters in the unreserved_regexp set
+                     # Keep only characters in the $characters_to_keep regexp set
                      #
                      if ($unescaped_ok) {
                        my $decoded_string = '';
@@ -1413,84 +1434,18 @@ PATH_QUERY_INLINED
                      $string
                    }
                   );
-
+  # =============================================================================================
+  # unescape: a wrapper on percent_decode
   #
-  # Percent encoding. Encode all characters of a string matching a given regexp.
-  #
-  install_modifier($whoami, 'fresh', percent_encode =>
-                   sub {
-                     my ($self, $string, $characters_to_encode) = @_;
-
-                     $string =~ s!$characters_to_encode!
-                       {
-                        #
-                        # ${^MATCH} is a read-only variable
-                        # and Encode::encode is affecting $match -;
-                        #
-                        my $match = ${^MATCH};
-                        my $encoded;
-                        try {
-                          $encoded = join('',
-                                          map {
-                                            '%' . uc(unpack('H2', $_))
-                                          } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
-                                         )
-                        } catch {
-                          $self->_logger->tracef('%s', "$_");
-                          $encoded = $match;
-                          return;
-                        };
-                       }
-                       !egp;
-                     $string
-                   }
-                  );
-  #
-  # Escape. Encode all characters of a string not matching a given regexp.
-  # This is nothing else but percent_encode() using a regexp doing the reverse.
-  #
-  install_modifier($whoami, 'fresh', escape =>
-                   sub {
-                     my ($self, $string, $characters_to_keep) = @_;
-
-                     $characters_to_keep //= $reserved_or_unreserved;
-                     my $escaped = '';
-                     foreach (split(//, $string)) {
-                       #
-                       # Characters to escape at those that are
-                       # not part of the unreserved set nor the reserved characters
-                       # reserved characters
-                       if ($_ =~ $characters_to_keep) {
-                         $escaped .= $_
-                       } else {
-                         my $match = $_;
-                         try {
-                           $escaped .=
-                             join('',
-                                  map {
-                                    '%' . uc(unpack('H2', $_))
-                                  } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
-                                 )
-                           } catch {
-                             $self->_logger->tracef('%s', "$_");
-                             $escaped .= $match;
-                             return;
-                           };
-                       }
-                     }
-                     $escaped
-                   }
-                  );
-
-  #
-  # Unescape. Decode all %HH sequences of a string keeping only characters matching a given regexp.
-  # Basically this routine is searching for all %HH sequences and applies percent_decode on them.
-  #
+  # One required parameter: The string to unescape
+  # One optional parameter: The set of characters to accept. Say undef to decode everything.
+  #                         Default is $unreserved.
+  # =============================================================================================
   install_modifier($whoami, 'fresh', unescape =>
                    sub {
-                     my ($self, $string, $characters_to_keep) = @_;
+                     my ($self, $string) = @_;
 
-                     $characters_to_keep //= $reserved_or_unreserved;
+                     my $characters_to_keep = ($#_ >= 2) ? $_[2] : $unreserved;
 
                      my $output = '';
                      my $previous_pos = 0;
@@ -1505,6 +1460,56 @@ PATH_QUERY_INLINED
                      }
                      $output .= substr($string, $previous_pos, $remaining) if $remaining;
                      $output
+                   }
+                  );
+  # =============================================================================================
+  # percent_encode
+  #
+  # One required parameter: the string to escape/percent-encode
+  # One optional parameter: the set of characters to encode. If undef this will encode everything
+  # =============================================================================================
+  install_modifier($whoami, 'fresh', percent_encode =>
+                   sub {
+                     my ($self, $string, $characters_to_encode) = @_;
+
+                     $characters_to_encode //= qr/./s;
+
+                     $string =~ s!$characters_to_encode!{
+                                                         #
+                                                         # ${^MATCH} is a read-only variable
+                                                         # and Encode::encode is affecting $match -;
+                                                         #
+                                                         my $match = ${^MATCH};
+                                                         my $encoded;
+                                                         try {
+                                                           $encoded = join('',
+                                                                           map {
+                                                                             '%' . uc(unpack('H2', $_))
+                                                                           } split(//, Encode::encode('UTF-8', $match, Encode::FB_CROAK))
+                                                                          )
+                                                         } catch {
+                                                           $self->_logger->tracef('%s', "$_");
+                                                           $encoded = $match;
+                                                           return;
+                                                         };
+                                                        }!egp;
+                     $string
+                   }
+                  );
+  # =============================================================================================
+  # escape: a wrapper on percent_encode
+  #
+  # One required parameter: The string to unescape
+  # One optional parameter: The set of characters to keep. Say undef to encode everything.
+  #                         Default is $unreserved.
+  # =============================================================================================
+  install_modifier($whoami, 'fresh', escape =>
+                   sub {
+                     my ($self, $string) = @_;
+
+                     my $characters_to_keep = ($#_ >= 2) ? $_[2] : $unreserved;
+
+                     $self->percent_encode($string, $characters_to_keep);
                    }
                   );
 

@@ -15,22 +15,9 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Impl::_segment;
 #
 use Moo;
 use Types::Standard -all;
+use overload '""' => sub { $_[0]->[0] }, fallback => 1;
 
-has input       => ( is => 'ro', isa => Str, required => 1 );
-has unescape    => ( is => 'ro', isa => CodeRef, required => 1 );
-has unreserved  => ( is => 'ro', isa => RegexpRef, required => 1 );
-has _path       => ( is => 'rw', isa => Str );
-has _parameters => ( is => 'rw', isa => ArrayRef[Str]);
-#
-# This is a copy of URI::_segment logic
-#
-sub BUILD {
-  my ($self) = @_;
-
-  my @segment = split(';', $self->input, -1);
-  $segment[0] = $self->unescape->($segment[0], $self->unreserved);
-  $self->_path(shift @segment);
-  $self->_parameters(\@segment);
-}
+has unescaped_proper_path => ( is => 'ro', isa => Str, required => 1 );
+has escaped_parameters    => ( is => 'ro', isa => ArrayRef[Str], required => 1 );
 
 1;
