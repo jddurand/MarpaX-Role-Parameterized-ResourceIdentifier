@@ -101,7 +101,10 @@ around build_percent_encoding_normalizer => sub {
   # percent-encoded octet sequence that corresponds to an unreserved
   # character, as described in section 2.3 of [RFC3986].
   #
-  $rc->{$self->pct_encoded} = sub { $_[0]->percent_decode($_[2]) } if (defined $self->pct_encoded);
+  if (defined($self->pct_encoded) && defined($self->unreserved)) {
+    my $unreserved = $self->unreserved;
+    $rc->{$self->pct_encoded} = sub { $_[0]->percent_decode($_[2], $unreserved) }
+  }
   $rc
 };
 
