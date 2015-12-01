@@ -1466,7 +1466,7 @@ PATH_SEGMENTS_INLINED
                      #
                      if ($unescaped_ok) {
                        #
-                       # No need to recover escaped sequences in $characters_to_decode is undef:
+                       # No need to recover escaped sequences if $characters_to_decode is undef:
                        # we want everything
                        #
                        return $unescaped if ! defined($characters_to_decode);
@@ -1478,6 +1478,9 @@ PATH_SEGMENTS_INLINED
                        my $reescaped_ok = 1;
                        foreach (split('', $unescaped)) {
                          my $reencoded_length;
+                         #
+                         # IMHO it is impossible that it failed since decoding succeeded
+                         #
                          try {
                            my $character = $_;
                            my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
@@ -1539,20 +1542,29 @@ PATH_SEGMENTS_INLINED
                    sub {
                      my ($self, $string, $characters_not_to_encode) = @_;
 
+                     if (! defined($characters_not_to_encode)) {
+                       #
+                       # A version that is doing it in one go
+                       #
+                       return uc(join('',
+                                      map {
+                                        '%' . unpack('H2', $_)
+                                      } split(//, Encode::encode('UTF-8', $string, Encode::FB_CROAK))
+                                     )
+                                )
+                     }
+
                      my $rc = '';
-                     foreach (split(//, $string)) {
-                       if ($_ =~ $characters_not_to_encode) {
-                         $rc .= $_;
+                     foreach my $c (split(//, $string)) {
+                       if ($c =~ $characters_not_to_encode) {
+                         $rc .= $c;
                        } else {
-                         my $c = $_;
                          try {
-                           my $toencode = $c;
-                           my $encoded .= join('',
-                                               map {
-                                                 '%' . uc(unpack('H2', $_))
-                                               } split(//, Encode::encode('UTF-8', $toencode, Encode::FB_CROAK))
-                                              );
-                           $rc .= $encoded;
+                           $rc .= uc(join('',
+                                          map {
+                                            '%' . unpack('H2', $_)
+                                          } split(//, Encode::encode('UTF-8', $c, Encode::FB_CROAK))
+                                         ))
                          } catch {
                            $self->_logger->tracef('%s', "$_");
                            $rc .= $c;
