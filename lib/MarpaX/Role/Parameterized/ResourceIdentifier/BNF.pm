@@ -498,7 +498,7 @@ role {
       #
       do {
         $rc[$_UNESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_UNESCAPED_STRUCT] : $args[$_];
-        $rc[  $_ESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[  $_ESCAPED_STRUCT] : $self->percent_encode($args[$_], $unreserved);
+        $rc[  $_ESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[  $_ESCAPED_STRUCT] : $args[$_];
       } for (0..$#args)
     }
 
@@ -1365,17 +1365,18 @@ my \%hash = (
 #
 (\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->path_query
 PATH_QUERY_INLINED
-    install_modifier($whoami, 'fresh',  path_query => eval "sub { $path_query_inlined }");
-  }
-  my $path_segments_inlined = <<PATH_SEGMENTS_INLINED;
+    install_modifier($whoami, 'fresh', path_query => eval "sub { $path_query_inlined }");
+
+    my $path_segments_inlined = <<PATH_SEGMENTS_INLINED;
 # my (\$self, \@segments) = \@_;
 #
 # This method was invented by URI, we maintain its semantic: return the escaped path or segments
 #
+my \$delimiter = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_segment_parameter_delimiter;
 if (\$#_ <= 0) {
   return \$_[0]->_unescaped_struct->{path} unless wantarray;
   my \@segments = ();
-  my \$delimiter_re = quotemeta(\$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_segment_parameter_delimiter);
+  my \$delimiter_re = quotemeta(\$delimiter);
 
   foreach (\@{\$_[0]->_unescaped_struct->{segments}}) {
     if (\$_ =~ \$delimiter_re) {
@@ -1400,14 +1401,15 @@ foreach (\@_[1..\$#_]) {
     my \@parts = \@{\$_};
     \$parts[0] = s/%/%25/g;
     for (\@parts) { s/;/%3B/g; }
-    \$_ = join(";", \@parts);
+    push(\@segments, join(";", \@parts));
   } else {
-    s/%/%25/g;
-    s/;/%3B/g;
+    my \$tmp = \$_;
+    \$tmp =~ s/%/%25/g;
+    \$tmp =~ s/;/%3B/g;
+    push(\@segments, \$tmp);
   }
-  push(\@segments, \$_);
 }
-\$new_path = join('/', \@segments);
+my \$new_path = join('/', \@segments);
 my %hash = (
             scheme    => \$_[0]->_raw_struct->{scheme},
             authority => \$_[0]->_raw_struct->{authority},
@@ -1415,11 +1417,14 @@ my %hash = (
             query     => \$_[0]->_raw_struct->{query},
             fragment  => \$_[0]->_raw_struct->{fragment}
            );
+print STDERR "RECOMPOSE GIVE: " . \$_[0]->_recompose(\\\%hash) . "\n";
 #
 # Rebless and call us without argument
 #
-(\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->path_query
+(\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->path_segments
 PATH_SEGMENTS_INLINED
+    install_modifier($whoami, 'fresh', path_segments => eval "sub { $path_segments_inlined }");
+  }
 
   # =============================================================================================
   # percent_decode
