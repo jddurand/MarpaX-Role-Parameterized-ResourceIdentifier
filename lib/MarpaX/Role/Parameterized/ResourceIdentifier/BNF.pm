@@ -1339,44 +1339,40 @@ COMPONENT_INLINED
 #
 # This method was invented by URI, we maintain its semantic: return the escaped path
 #
-if (! defined \$_[1]) {
-  my \$path  = \$_[0]->_escaped_struct->{path};
-  my \$query = \$_[0]->_escaped_struct->{query};
-  return (defined \$query) ? \$path . '?' . \$query : \$path
+my \$rc = \$_[0]->_escaped_struct->{path};
+my \$query = \$_[0]->_escaped_struct->{query};
+\$rc .= '?' . \$query if (defined \$query);
+
+if (\$#_ > 0) {
+  my (\$new_path, \$new_query) = (\$_[1], undef);
+  if (\$_[1] =~ /\\?/g) {
+    my \$after_question_mark_pos = pos(\$_[1]);
+    \$new_path  = substr(\$_[1], 0, \$after_question_mark_pos - 1);
+    \$new_query = substr(\$_[1], \$after_question_mark_pos, length(\$_[1]) - \$after_question_mark_pos);
+  }
+  my \%hash = (
+                scheme    => \$_[0]->_raw_struct->{scheme},
+                authority => \$_[0]->_raw_struct->{authority},
+                path      => \$new_path,
+                query     => \$new_query,
+                fragment  => \$_[0]->_raw_struct->{fragment}
+              );
+  \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
 }
-#
-# Rebless and call us without argument
-#
-my (\$new_path, \$new_query) = (\$_[1], undef);
-if (\$_[1] =~ /\\?/g) {
-  my \$after_question_mark_pos = pos(\$_[1]);
-  \$new_path  = substr(\$_[1], 0, \$after_question_mark_pos - 1);
-  \$new_query = substr(\$_[1], \$after_question_mark_pos, length(\$_[1]) - \$after_question_mark_pos);
-}
-my \%hash = (
-              scheme    => \$_[0]->_raw_struct->{scheme},
-              authority => \$_[0]->_raw_struct->{authority},
-              path      => \$new_path,
-              query     => \$new_query,
-              fragment  => \$_[0]->_raw_struct->{fragment}
-            );
-#
-# Rebless and call us without argument
-#
-(\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->path_query
+\$rc
 PATH_QUERY_INLINED
     install_modifier($whoami, 'fresh', path_query => eval "sub { $path_query_inlined }");
-
     my $path_segments_inlined = <<PATH_SEGMENTS_INLINED;
 # my (\$self, \@segments) = \@_;
 #
 # This method was invented by URI, we maintain its semantic: return the escaped path or segments
 #
 my \$delimiter = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_segment_parameter_delimiter;
+my \$delimiter_quotemeta = quotemeta(\$delimiter);
+my \$delimiter_re = qr/\$delimiter_quotemeta/;
 my \@rc;
 my \$rc;
 if (wantarray) {
-  my \$delimiter_re = quotemeta(\$delimiter);
   foreach (\@{\$_[0]->_unescaped_struct->{segments}}) {
     if (\$_ =~ \$delimiter_re) {
       my \@split = split(\$delimiter_re, \$_, -1);
@@ -1384,8 +1380,8 @@ if (wantarray) {
       push(\@rc,
            MarpaX::Role::Parameterized::ResourceIdentifier::Impl::Segment->new
            (
-            proper_path => \$proper_path,
-            parameters  => [ map { \$_[0]->escape(\$_) } \@split ]
+            \$proper_path,
+            map { \$_[0]->escape(\$_) } \@split
           )
          );
     } else {
@@ -1393,21 +1389,23 @@ if (wantarray) {
     }
   }
 } else {
-  \$rc = \$_[0]->_unescaped_struct->{path}
+  \$rc = \$_[0]->_escaped_struct->{path}
 }
 if (\$#_ > 0) {
   my \@new_segments = ();
+  my \$unreserved = \$_[0]->unreserved;
+  my \$percent_quotemeta = quotemeta('%');
+  my \$delimiter_and_percent_re = qr/(?:\$delimiter_quotemeta)|(?:\$percent_quotemeta)/;
   foreach (\@_[1..\$#_]) {
+    #
+    # We are producing a path: we want to escape every character not in the unreserved set
+    # and definitly encode the delimiter character and '%' characters. This is why there is the additional
+    # parameter in percent_encode():
+    #
     if (ref \$_) {
-      my \@parts = \@{\$_};
-      \$parts[0] = s/%/%25/g;
-      for (\@parts) { s/;/%3B/g; }
-      push(\@new_segments, join(";", \@parts));
+      push(\@new_segments, join(\$delimiter, map { \$_[0]->percent_encode(\$_, \$unreserved, \$delimiter_re) } \@{\$_}))
     } else {
-      my \$tmp = \$_;
-      \$tmp =~ s/%/%25/g;
-      \$tmp =~ s/;/%3B/g;
-      push(\@new_segments, \$tmp);
+      push(\@new_segments, \$_[0]->percent_encode(\$_, \$unreserved, \$delimiter_re))
     }
   }
   my \$new_path = join('/', \@new_segments);
@@ -1529,15 +1527,21 @@ PATH_SEGMENTS_INLINED
   #
   # One required parameter: the string to escape/percent-encode
   # One optional parameter: the set of characters to not encode. If undef this will encode
-  #                         everything.
+  #                         everything. And internal additional parameter exist and is used
+  #                         in path_segments: $characters_to_encode. If this is set then
+  #                         a character matching $characters_to_encode is encoded. This last
+  #                         parameter is IGNORED if $characters_not_to_encode is undefined.
+  #                         Note that when $characters_to_encode is set, it has precedence over
+  #                         $characters_not_to_encode.
   # =============================================================================================
   install_modifier($whoami, 'fresh', percent_encode =>
                    sub {
-                     my ($self, $string, $characters_not_to_encode) = @_;
+                     my ($self, $string, $characters_not_to_encode, $characters_to_encode) = @_;
 
                      if (! defined($characters_not_to_encode)) {
                        #
-                       # A version that is doing it in one go
+                       # A version that is doing it in one go. Note that eventual
+                       # $characters_to_encode is ignored.
                        #
                        return uc(join('',
                                       map {
@@ -1549,7 +1553,7 @@ PATH_SEGMENTS_INLINED
 
                      my $rc = '';
                      foreach my $c (split(//, $string)) {
-                       if ($c =~ $characters_not_to_encode) {
+                       if ($c =~ $characters_not_to_encode && (! defined($characters_to_encode) || ($c !~ $characters_to_encode))) {
                          $rc .= $c;
                        } else {
                          try {
