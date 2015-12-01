@@ -338,6 +338,7 @@ our $check_params = compile(
                                  pct_encoded => Str|Undef,
                                  mapping     => HashRef[Str],
                                  struct_ext  => Optional[CodeRef],
+                                 server      => Optional[Bool],
                                  _orig_arg   => Optional[Any]
                                 ]
                            );
@@ -372,6 +373,7 @@ role {
   my $reserved    = $PARAMS->{reserved};
   my $unreserved  = $PARAMS->{unreserved};
   my $pct_encoded = $PARAMS->{pct_encoded};
+  my $server      = $PARAMS->{server};
 
   if ($extends) {
     #
