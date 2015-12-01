@@ -10,14 +10,17 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Impl::Segment;
 # AUTHORITY
 
 #
-# For backward compatility with URI, that makes a segment a separate
-# object
+# For backward compatility with URI's path_segment
 #
-use Moo;
-use Types::Standard -all;
 use overload '""' => sub { $_[0]->[0] }, fallback => 1;
 
-has proper_path => ( is => 'ro', isa => Str, required => 1 );
-has parameters  => ( is => 'ro', isa => ArrayRef[Str], required => 1 );
+#
+# In contrary to original URI's _segment.pm:
+# we create internal the object by sending all segments properly escaped/unescaped
+#
+sub new {
+    my $class = shift;
+    bless \@_, $class;
+}
 
 1;
