@@ -484,33 +484,22 @@ role {
     #
     $rc[$_CONVERTED_STRUCT] = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::converter_wrapper->[$converter_indice]->($self, $criteria, $rc[$_CONVERTED_STRUCT]);
     #
-    # Escape
+    # Unescape/escape
     #
     if (defined($pct_encoded) && ($criteria eq $pct_encoded)) {
       #
-      # This is already escaped
+      # pct_encoded rule. We want to unescape everything then to re-escape everything not
+      # in the unreserved set. Note that the common grammar has no pct_encoded rule -;
       #
-      $rc[$_ESCAPED_STRUCT] = $rc[$_RAW_STRUCT];
+      $rc[$_ESCAPED_STRUCT] = $self->percent_encode($rc[$_UNESCAPED_STRUCT] = $self->percent_decode($rc[$_RAW_STRUCT]), $unreserved)
     } else {
       #
-      # Escape the rest
+      # For the reset, keep data as-is for unescaped, and escape
       #
-      do { $rc[$_ESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_ESCAPED_STRUCT] : $self->escape($args[$_]) } for (0..$#args)
-    }
-    #
-    # Unescape
-    #
-    if (defined($pct_encoded) && ($criteria eq $pct_encoded)) {
-      #
-      # Unescape pct_encoded stuff. No need to go through the wrapper, we know
-      # we already in the pct_encoded context
-      #
-      $rc[$_UNESCAPED_STRUCT] = $self->percent_decode($rc[$_RAW_STRUCT]);
-    } else {
-      #
-      # Keep rest as-is
-      #
-      do { $rc[$_UNESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_ESCAPED_STRUCT] : $args[$_] } for (0..$#args)
+      do {
+        $rc[$_UNESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[$_UNESCAPED_STRUCT] : $args[$_];
+        $rc[  $_ESCAPED_STRUCT] .= ref($args[$_]) ? $args[$_]->[  $_ESCAPED_STRUCT] : $self->percent_encode($args[$_], $unreserved);
+      } for (0..$#args)
     }
 
     \@rc
