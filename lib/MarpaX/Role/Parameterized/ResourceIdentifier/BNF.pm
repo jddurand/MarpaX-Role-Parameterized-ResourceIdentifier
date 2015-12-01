@@ -1373,16 +1373,15 @@ PATH_QUERY_INLINED
 # This method was invented by URI, we maintain its semantic: return the escaped path or segments
 #
 my \$delimiter = \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_segment_parameter_delimiter;
-if (\$#_ <= 0) {
-  return \$_[0]->_unescaped_struct->{path} unless wantarray;
-  my \@segments = ();
+my \@rc;
+my \$rc;
+if (wantarray) {
   my \$delimiter_re = quotemeta(\$delimiter);
-
   foreach (\@{\$_[0]->_unescaped_struct->{segments}}) {
     if (\$_ =~ \$delimiter_re) {
       my \@split = split(\$delimiter_re, \$_, -1);
       my \$proper_path = shift(\@split);
-      push(\@segments,
+      push(\@rc,
            MarpaX::Role::Parameterized::ResourceIdentifier::Impl::Segment->new
            (
             proper_path => \$proper_path,
@@ -1390,38 +1389,38 @@ if (\$#_ <= 0) {
           )
          );
     } else {
-      push(\@segments, \$_);
+      push(\@rc, \$_);
     }
   }
-  return \@segments
+} else {
+  \$rc = \$_[0]->_unescaped_struct->{path}
 }
-my \@segments = ();
-foreach (\@_[1..\$#_]) {
-  if (ref \$_) {
-    my \@parts = \@{\$_};
-    \$parts[0] = s/%/%25/g;
-    for (\@parts) { s/;/%3B/g; }
-    push(\@segments, join(";", \@parts));
-  } else {
-    my \$tmp = \$_;
-    \$tmp =~ s/%/%25/g;
-    \$tmp =~ s/;/%3B/g;
-    push(\@segments, \$tmp);
+if (\$#_ > 0) {
+  my \@new_segments = ();
+  foreach (\@_[1..\$#_]) {
+    if (ref \$_) {
+      my \@parts = \@{\$_};
+      \$parts[0] = s/%/%25/g;
+      for (\@parts) { s/;/%3B/g; }
+      push(\@new_segments, join(";", \@parts));
+    } else {
+      my \$tmp = \$_;
+      \$tmp =~ s/%/%25/g;
+      \$tmp =~ s/;/%3B/g;
+      push(\@new_segments, \$tmp);
+    }
   }
+  my \$new_path = join('/', \@new_segments);
+  my %hash = (
+              scheme    => \$_[0]->_raw_struct->{scheme},
+              authority => \$_[0]->_raw_struct->{authority},
+              path      => \$new_path,
+              query     => \$_[0]->_raw_struct->{query},
+              fragment  => \$_[0]->_raw_struct->{fragment}
+             );
+  \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
 }
-my \$new_path = join('/', \@segments);
-my %hash = (
-            scheme    => \$_[0]->_raw_struct->{scheme},
-            authority => \$_[0]->_raw_struct->{authority},
-            path      => \$new_path,
-            query     => \$_[0]->_raw_struct->{query},
-            fragment  => \$_[0]->_raw_struct->{fragment}
-           );
-print STDERR "RECOMPOSE GIVE: " . \$_[0]->_recompose(\\\%hash) . "\n";
-#
-# Rebless and call us without argument
-#
-(\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->path_segments
+wantarray ? \@rc : \$rc
 PATH_SEGMENTS_INLINED
     install_modifier($whoami, 'fresh', path_segments => eval "sub { $path_segments_inlined }");
   }
