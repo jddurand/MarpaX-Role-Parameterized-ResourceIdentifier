@@ -1461,16 +1461,27 @@ USERINFO_INLINED
     my $host_inlined = <<HOST_INLINED;
 # my (\$self, \$argument) = \@_;
 my \$rc = \$_[0]->_unescaped_struct->{host};
+#
+# Remove brackets if any (case of ipv6)
+#
+\$rc =~ s/^\\\[//;
+\$rc =~ s/\\\]\$//;
 
 if (\$#_ > 0) {
   my \$unreserved = \$_[0]->unreserved;
-  my \$new_host = defined(\$_[1]) ? \$_[0]->percent_encode(\$_[1], \$unreserved) : undef;
-  my \$new_port = undef;
+  my (\$new_host, \$new_port) = (\$_[1], undef);
   if (defined \$new_host) {
-    if (\$new_host =~ /(?<=:)[0-9]*\$/) {
-      \$new_port = substr(\$new_host, \$-[0], \$+[0] - \$-[0]);
+    if (\$new_host =~ /:([0-9]*)\$/) {
+      \$new_port = substr(\$new_host, \$-[1], \$+[1] - \$-[1]);
+      \$new_host =~ s/:([0-9]*)\$//;
     }
+    #
+    # ipv6
+    #
+    \$new_host = "[\$new_host]" if ((\$new_host =~ /:/) && substr(\$new_host, 0, 1) ne '[');
   }
+  \$new_host = \$_[0]->percent_encode(\$new_host, \$unreserved) if (defined \$new_host);
+  \$new_port = \$_[0]->percent_encode(\$new_port, \$unreserved) if (defined \$new_port); # Not needed a priori
   my \$new_authority = \$_[0]->_raw_struct->{userinfo};
   if (defined \$new_authority) {
     if (defined \$new_host) {
