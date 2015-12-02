@@ -1424,7 +1424,130 @@ wantarray ? \@rc : \$rc
 PATH_SEGMENTS_INLINED
     install_modifier($whoami, 'fresh', path_segments => eval "sub { $path_segments_inlined }");
   }
+  #
+  # Some methods specific to the server schemes syntax as per original URI.
+  # Input/output is escaped.
+  #
+  if ($server) {
+    my $userinfo_inlined = <<USERINFO_INLINED;
+# my (\$self, \$argument) = \@_;
+my \$rc = \$_[0]->_escaped_struct->{userinfo};
 
+if (\$#_ > 0) {
+  my \$unreserved = \$_[0]->unreserved;
+  my \$new_authority = \$_[1];
+  if (defined \$new_authority) {
+    \$new_authority =~ s/\@/%40/g;
+    \$new_authority .= '\@' . \$_[0]->_raw_struct->{host} if (defined \$_[0]->_raw_struct->{host});
+  } else {
+    \$new_authority = \$_[0]->_raw_struct->{host} if (defined \$_[0]->_raw_struct->{host});
+  }
+  \$new_authority .= ':' . \$_[0]->_raw_struct->{port} if (defined \$_[0]->_raw_struct->{port});
+  my \%hash = (
+                scheme    => \$_[0]->_raw_struct->{scheme},
+                authority => \$new_authority,
+                path      => \$_[0]->_raw_struct->{path},
+                query     => \$_[0]->_raw_struct->{query},
+                fragment  => \$_[0]->_raw_struct->{fragment}
+              );
+  \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
+}
+\$rc
+USERINFO_INLINED
+    install_modifier($whoami, 'fresh', userinfo => eval "sub { $userinfo_inlined }");
+    #
+    # host: input/output is unescaped
+    #
+    my $host_inlined = <<HOST_INLINED;
+# my (\$self, \$argument) = \@_;
+my \$rc = \$_[0]->_unescaped_struct->{host};
+
+if (\$#_ > 0) {
+  my \$unreserved = \$_[0]->unreserved;
+  my \$new_host = defined(\$_[1]) ? \$_[0]->percent_encode(\$_[1], \$unreserved) : undef;
+  my \$new_port = undef;
+  if (defined \$new_host) {
+    if (\$new_host =~ /(?<=:)[0-9]*\$/) {
+      \$new_port = substr(\$new_host, \$-[0], \$+[0] - \$-[0]);
+    }
+  }
+  my \$new_authority = \$_[0]->_raw_struct->{userinfo};
+  if (defined \$new_authority) {
+    if (defined \$new_host) {
+      \$new_authority .= '\@' . \$new_host;
+      \$new_authority .= ':' . \$new_port if (defined \$new_port);
+    }
+  } else {
+    if (defined \$new_host) {
+      \$new_authority  = \$new_host;
+      \$new_authority .= ':' . \$new_port if (defined \$new_port);
+    }
+  }
+  my \%hash = (
+                scheme    => \$_[0]->_raw_struct->{scheme},
+                authority => \$new_authority,
+                path      => \$_[0]->_raw_struct->{path},
+                query     => \$_[0]->_raw_struct->{query},
+                fragment  => \$_[0]->_raw_struct->{fragment}
+              );
+  \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
+}
+\$rc
+HOST_INLINED
+    install_modifier($whoami, 'fresh', host => eval "sub { $host_inlined }");
+    #
+    # Specific host conversion:
+    # - ihost returns IRI host when spec is uri
+    # - uhost returns URI host when spec is iri
+    #
+    if ($spec eq 'uri') {
+      install_modifier($whoami, 'fresh', ihost => sub { $_[0]->_structs->[$_CONVERTED_STRUCT]->{host} } );
+    } else {
+      install_modifier($whoami, 'fresh', uhost => sub { $_[0]->_structs->[$_CONVERTED_STRUCT]->{host} } );
+    }
+    #
+    # port: input/output is raw
+    # Default is default_port
+    #
+    my $port_inlined = <<PORT_INLINED;
+my \$self = shift;
+my \$rc = \$self->_port(\@_);
+\$rc = \$self->default_port if ((! defined(\$rc)) || ! length(\$rc));
+\$rc
+PORT_INLINED
+    install_modifier($whoami, 'fresh', port => eval "sub { $port_inlined }");
+    #
+    # _port: input/output is raw
+    # No default.
+    #
+    my $_port_inlined = <<_PORT_INLINED;
+# my (\$self, \$argument) = \@_;
+my \$rc = \$_[0]->_raw_struct->{port};
+
+if (\$#_ > 0) {
+  my \$new_port = \$_[1];
+  my \$new_authority = \$_[0]->_raw_struct->{authority};
+  if (defined \$new_authority) {
+    #
+    # It is illegal to add a port without a host in the generic syntax,
+    # i.e. \$new_authority must be defined at this point
+    #
+    \$new_authority =~ s/:[0-9]*\$//;
+    \$new_authority .= ':' . \$new_port if (defined \$new_port);
+  }
+  my \%hash = (
+                scheme    => \$_[0]->_raw_struct->{scheme},
+                authority => \$new_authority,
+                path      => \$_[0]->_raw_struct->{path},
+                query     => \$_[0]->_raw_struct->{query},
+                fragment  => \$_[0]->_raw_struct->{fragment}
+              );
+  \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
+}
+\$rc
+_PORT_INLINED
+    install_modifier($whoami, 'around', _port => eval "sub { shift; $_port_inlined }");
+  }
   # =============================================================================================
   # percent_decode
   #
