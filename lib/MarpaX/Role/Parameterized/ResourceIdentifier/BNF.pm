@@ -318,7 +318,7 @@ sub BUILD {
   #
   # Parse the input
   #
-  $self->parse;
+  $self->parse
 }
 # =============================================================================
 # Parameter validation
@@ -443,12 +443,6 @@ role {
   my @not_found = grep { ! $fields{$_} } keys %fields;
   croak "[$type] Unmapped fields: @not_found" unless ! @not_found;
 
-  # -----
-  # Setup
-  # -----
-  my $marpa_trace_terminals = $setup->marpa_trace_terminals;
-  my $marpa_trace_values    = $setup->marpa_trace_values;
-
   # -------
   # Logging
   # -------
@@ -514,8 +508,6 @@ role {
   my $BNF = "inaccessible is ok by default\n:start ::= $start\n$bnf";
   my $grammar = Marpa::R2::Scanless::G->new({source => \$BNF});
   my %recognizer_option = (
-                           trace_terminals   => $marpa_trace_terminals,
-                           trace_values      => $marpa_trace_values,,
                            trace_file_handle => $trace_file_handle,
                            ranking_method    => 'high_rule_only',
                            grammar           => $grammar
@@ -528,8 +520,13 @@ role {
     my ($self) = @_;
 
     my $input = $self->input;
-    print STDERR "PARSING $input\n";
-    my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
+    my $r = Marpa::R2::Scanless::R->new(
+                                        {
+                                         %recognizer_option,
+                                         trace_terminals => $setup->marpa_trace_terminals,
+                                         trace_values    => $setup->marpa_trace_values
+                                        }
+                                       );
     #
     # For performance reason, cache all $self-> accesses
     #
@@ -1453,7 +1450,6 @@ if (\$#_ > 0) {
                 query     => \$_[0]->_raw_struct->{query},
                 fragment  => \$_[0]->_raw_struct->{fragment}
               );
-  print STDERR "RECOMPOSE WITH \\\$new_authority=\$new_authority\n";
   \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
 }
 \$rc
@@ -1570,52 +1566,63 @@ _PORT_INLINED
   if ($userpass) {
     #
     # No need to inline because we have no dependency on $top here
+    # This is mererly a copy of URI/_userpass.pm
     #
     my $user_sub = sub {
-      # my ($self, $argument) = @_;
-      my $old_user = $_[0]->_unescaped_struct->{user};
-      my $old_userinfo = $_[0]->_escaped_struct->{userinfo};
+      my $info = $_[0]->userinfo;
+      my $delimiter = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_user_password_delimiter;
 
       if ($#_ > 0) {
-        my $new_user = $_[1];
-        my $old_password = $_[0]->_escaped_struct->{password} // '';
-        if (! defined($new_user) && ! length($old_password)) {
+        my $new = $_[1];
+        my $pass = defined($info) ? $info : '';
+        my $pos = index($pass, $delimiter);
+        if ($pos > 0) {
+          substr($pass, 0, $pos, '');
+        }
+        if (! defined($new) && ! length($pass)) {
           $_[0]->userinfo(undef);
         } else {
-          $new_user = '' unless defined $new_user;
-          my $delimiter = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_user_password_delimiter;
+          $new = '' unless defined $new;
           my $delimiter_quote = quotemeta($delimiter);
-          $new_user = \$_[0]->percent_encode($new_user, qr/[\s\S]/, qr/%|(?:$delimiter_quote)/);
-          print STDERR "==> \$_[0]->userinfo('$new_user$delimiter$old_password')\n";
-          $_[0]->userinfo("$new_user$delimiter$old_password");
+          $new = $_[0]->percent_encode($new, qr/[\s\S]/, qr/%|(?:$delimiter_quote)/);
+          $_[0]->userinfo("$new$delimiter$pass");
         }
       }
-      return $old_user;
+      return undef unless defined $info;
+      my $pos = index($info, $delimiter);
+      if ($pos > 0) {
+        $info = substr($info, 0, $pos - 1);
+      }
+      $_[0]->unescape($info);
     };
     install_modifier($whoami, 'fresh', user => $user_sub);
     #
-    # password is never undef in URI
+    # Ditto
     #
     my $password_sub = sub {
-      # my ($self, $argument) = @_;
-      my $old_password = $_[0]->_unescaped_struct->{password};
-      my $old_userinfo = $_[0]->_escaped_struct->{userinfo};
+      my $info = $_[0]->userinfo;
+      my $delimiter = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_user_password_delimiter;
 
       if ($#_ > 0) {
-        my $new_password = $_[1];
-        my $old_user = $_[0]->_escaped_struct->{user} // '';
-        if (! defined($new_password) && ! length($old_user)) {
+        my $new = $_[1];
+        my $user = defined($info) ? $info : '';
+        my $pos = index($user, $delimiter);
+        if ($pos > 0) {
+          $user = substr($user, 0, $pos - 1);
+        }
+        if (! defined($new) && ! length($user)) {
           $_[0]->userinfo(undef);
         } else {
-          $new_password = '' unless defined $new_password;
-          my $delimiter = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_user_password_delimiter;
-          my $delimiter_quote = quotemeta($delimiter);
-          $new_password = $_[0]->percent_encode($new_password, qr/[\s\S]/, qr/%/);
-          print STDERR "==> \$_[0]->userinfo('$old_user$delimiter$new_password')\n";
-          $_[0]->userinfo("$old_user$delimiter$new_password");
+          $new = '' unless defined $new;
+          $new = $_[0]->percent_encode($new, qr/[\s\S]/, qr/%/);
+          $_[0]->userinfo("$user$delimiter$new");
         }
       }
-      return $old_password;
+      return undef unless defined $info;
+      my $pos = index($info, $delimiter);
+      return undef unless $pos >= 0;
+      $info = substr($info, 0, $pos, '');
+      $_[0]->unescape($info);
     };
     install_modifier($whoami, 'fresh', password => $password_sub);
   }
@@ -1703,19 +1710,12 @@ _PORT_INLINED
                    sub {
                      my ($self, $string, $characters_to_decode) = @_;
 
-                     my $output = '';
-                     my $previous_pos = 0;
-                     my $remaining = length($string);
                      while ($string =~ m/(?:%[0-9A-Fa-f]{2})+/gcp) {
-                       if ($-[0] > $previous_pos) {
-                         $output .= substr($string, $previous_pos, $-[0] - $previous_pos);
-                         $output .= $self->percent_decode(${^MATCH}, $characters_to_decode);
-                       }
-                       $previous_pos = $-[0];
-                       $remaining -= length(${^MATCH});
+                       my $replacement = $self->percent_decode(${^MATCH}, $characters_to_decode);
+                       substr($string, $-[0], $+[0] - $-[0], $replacement);
+                       pos($string) = $-[0] + length($replacement);
                      }
-                     $output .= substr($string, $previous_pos, $remaining) if $remaining;
-                     $output
+                     $string
                    }
                   );
   # =============================================================================================
