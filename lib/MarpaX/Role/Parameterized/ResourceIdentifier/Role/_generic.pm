@@ -37,6 +37,8 @@ use Try::Tiny;
 #      flag AllowUnassigned set to FALSE for creating IRIs and set to TRUE
 #      otherwise.
 
+sub can_scheme { my ($class, $scheme) = @_; $scheme =~ /\A[A-Za-z][A-Za-z0-9\+\-\.]*\z/ }
+
 around build_uri_converter => sub {
   my ($orig, $self) = (shift, shift);
   my $rc = $self->$orig(@_);

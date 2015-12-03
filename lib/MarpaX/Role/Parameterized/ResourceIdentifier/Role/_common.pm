@@ -11,6 +11,9 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::_common;
 
 use Moo::Role;
 use Unicode::Normalize qw/normalize/;
+
+sub can_scheme { my ($class, $scheme) = @_; $scheme =~ /\A[A-Za-z][A-Za-z0-9\+\-\.]*\z/ }
+
 #
 # Arguments of every callback:
 # my ($self, $field, $value, $lhs) = @_;
