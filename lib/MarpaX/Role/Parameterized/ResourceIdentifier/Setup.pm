@@ -30,6 +30,7 @@ sub rel_normalized               { __PACKAGE__->uri_compat() ?                  
 sub remove_dot_segments_strict   { __PACKAGE__->uri_compat() ?           ! $URI::ABS_ALLOW_RELATIVE_SCHEME :           ! $MarpaX::RI::ABS_ALLOW_RELATIVE_SCHEME }
 sub default_query_form_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_QUERY_FORM_DELIMITER || '&') : ($MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER || '&') }
 sub default_segment_parameter_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_SEGMENT_PARAMETER_DELIMITER || ';') : ($MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER || ';') }
+sub default_user_password_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_USER_PASSWORD_DELIMITER || ':') : ($MarpaX::RI::DEFAULT_USER_PASSWORD_DELIMITER || ':') }
 
 with 'MooX::Singleton';
 

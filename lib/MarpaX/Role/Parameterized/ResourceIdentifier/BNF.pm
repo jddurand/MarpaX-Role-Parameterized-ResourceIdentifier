@@ -339,6 +339,7 @@ our $check_params = compile(
                                  mapping     => HashRef[Str],
                                  struct_ext  => Optional[CodeRef],
                                  server      => Optional[Bool],
+                                 userpass    => Optional[Bool],
                                  _orig_arg   => Optional[Any]
                                 ]
                            );
@@ -374,6 +375,7 @@ role {
   my $unreserved  = $PARAMS->{unreserved};
   my $pct_encoded = $PARAMS->{pct_encoded};
   my $server      = $PARAMS->{server};
+  my $userpass    = $PARAMS->{userpass};
 
   if ($extends) {
     #
@@ -526,6 +528,7 @@ role {
     my ($self) = @_;
 
     my $input = $self->input;
+    print STDERR "PARSING $input\n";
     my $r = Marpa::R2::Scanless::R->new(\%recognizer_option);
     #
     # For performance reason, cache all $self-> accesses
@@ -1450,6 +1453,7 @@ if (\$#_ > 0) {
                 query     => \$_[0]->_raw_struct->{query},
                 fragment  => \$_[0]->_raw_struct->{fragment}
               );
+  print STDERR "RECOMPOSE WITH \\\$new_authority=\$new_authority\n";
   \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
 }
 \$rc
@@ -1558,6 +1562,62 @@ if (\$#_ > 0) {
 \$rc
 _PORT_INLINED
     install_modifier($whoami, 'around', _port => eval "sub { shift; $_port_inlined }");
+  }
+  #
+  # Some methods specific to the user/password schemes syntax as per original URI.
+  # Input/output is escaped.
+  #
+  if ($userpass) {
+    #
+    # No need to inline because we have no dependency on $top here
+    #
+    my $user_sub = sub {
+      # my ($self, $argument) = @_;
+      my $old_user = $_[0]->_unescaped_struct->{user};
+      my $old_userinfo = $_[0]->_escaped_struct->{userinfo};
+
+      if ($#_ > 0) {
+        my $new_user = $_[1];
+        my $old_password = $_[0]->_escaped_struct->{password} // '';
+        if (! defined($new_user) && ! length($old_password)) {
+          $_[0]->userinfo(undef);
+        } else {
+          $new_user = '' unless defined $new_user;
+          my $delimiter = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_user_password_delimiter;
+          my $delimiter_quote = quotemeta($delimiter);
+          $new_user = \$_[0]->percent_encode($new_user, qr/[\s\S]/, qr/%|(?:$delimiter_quote)/);
+          print STDERR "==> \$_[0]->userinfo('$new_user$delimiter$old_password')\n";
+          $_[0]->userinfo("$new_user$delimiter$old_password");
+        }
+      }
+      return $old_user;
+    };
+    install_modifier($whoami, 'fresh', user => $user_sub);
+    #
+    # password is never undef in URI
+    #
+    my $password_sub = sub {
+      # my ($self, $argument) = @_;
+      my $old_password = $_[0]->_unescaped_struct->{password};
+      my $old_userinfo = $_[0]->_escaped_struct->{userinfo};
+
+      if ($#_ > 0) {
+        my $new_password = $_[1];
+        my $old_user = $_[0]->_escaped_struct->{user} // '';
+        if (! defined($new_password) && ! length($old_user)) {
+          $_[0]->userinfo(undef);
+        } else {
+          $new_password = '' unless defined $new_password;
+          my $delimiter = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->default_user_password_delimiter;
+          my $delimiter_quote = quotemeta($delimiter);
+          $new_password = $_[0]->percent_encode($new_password, qr/[\s\S]/, qr/%/);
+          print STDERR "==> \$_[0]->userinfo('$old_user$delimiter$new_password')\n";
+          $_[0]->userinfo("$old_user$delimiter$new_password");
+        }
+      }
+      return $old_password;
+    };
+    install_modifier($whoami, 'fresh', password => $password_sub);
   }
   # =============================================================================================
   # percent_decode
