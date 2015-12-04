@@ -192,16 +192,32 @@ has _indice_description     => ( is => 'ro',  isa => ArrayRef[Str], default => s
                                  }
                                );
 #
-# Internally I use hash notation for performance
+# Generic helpers that will always work
 #
 sub raw                 { $_[0]->{_structs}->[       _RAW_STRUCT]->{$_[1] // 'output'} }
+sub raw_scheme          { $_[0]->raw('scheme')   }
+sub raw_opaque          { $_[0]->raw('opaque')   }
+sub raw_fragment        { $_[0]->raw('fragment') }
+
 sub normalized          { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{$_[1] // 'output'} }
+sub normalized_scheme   { $_[0]->normalized('scheme')   }
+sub normalized_opaque   { $_[0]->normalized('opaque')   }
+sub normalized_fragment { $_[0]->normalized('fragment') }
+
 sub escaped             { $_[0]->{_structs}->[   _ESCAPED_STRUCT]->{$_[1] // 'output'} }
+sub escaped_scheme      { $_[0]->escaped('scheme')   }
+sub escaped_opaque      { $_[0]->escaped('opaque')   }
+sub escaped_fragment    { $_[0]->escaped('fragment') }
+
 sub unescaped           { $_[0]->{_structs}->[ _UNESCAPED_STRUCT]->{$_[1] // 'output'} }
+sub unescaped_scheme    { $_[0]->unescaped('scheme')   }
+sub unescaped_opaque    { $_[0]->unescaped('opaque')   }
+sub unescaped_fragment  { $_[0]->unescaped('fragment') }
+
 sub converted           { $_[0]->{_structs}->[ _CONVERTED_STRUCT]->{$_[1] // 'output'} }
-sub normalized_scheme   { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'scheme'} }
-sub normalized_opaque   { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'opaque'} }
-sub normalized_fragment { $_[0]->{_structs}->[_NORMALIZED_STRUCT]->{'fragment'} }
+sub converted_scheme    { $_[0]->converted('scheme')   }
+sub converted_opaque    { $_[0]->converted('opaque')   }
+sub converted_fragment  { $_[0]->converted('fragment') }
 #
 # Let's be always URI compatible for the canonical method
 #
