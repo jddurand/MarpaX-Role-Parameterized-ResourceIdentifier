@@ -1739,8 +1739,8 @@ _PORT_INLINED
   #
   # One required parameter: the string to escape/percent-encode
   # One optional parameter: the set of characters to not encode. If undef this will encode
-  #                         everything. And internal additional parameter exist and is used
-  #                         in path_segments: $characters_to_encode. If this is set then
+  #                         everything. An internal additional is $characters_to_encode.
+  #                         If this is set then:
   #                         a character matching $characters_to_encode is encoded. This last
   #                         parameter is IGNORED if $characters_not_to_encode is undefined.
   #                         Note that when $characters_to_encode is set, it has precedence over
