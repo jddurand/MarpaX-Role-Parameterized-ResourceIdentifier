@@ -84,6 +84,17 @@ sub _new_from_common {
   $subclass->new($args)
 }
 
+sub _arg2scheme {
+  my $arg = shift;
+  return undef if (! defined $arg);
+  $arg = $setup->arg2arg($arg);
+  my $rc;
+  if ($arg =~ $scheme_re) {
+    $rc = substr($arg, $-[0], $+[0] - $-[0])
+  }
+  $rc
+}
+
 sub new {
   my ($class, $args, $next) = @_;
 
@@ -92,16 +103,11 @@ sub new {
   # scheme argument ? The original logic of URI is ok for me.
   #
   my $scheme;
-  if ((! ref($args)) && (my $stringified_args = "$args") =~ $scheme_re) {
-    $scheme = substr($stringified_args, $-[0], $+[0] - $-[0])
-  }
-  $scheme = $next->scheme if (! defined($scheme)) && blessed($next) && $next->can('scheme');
-  if ((! defined($scheme)) && (defined($next)) && (! ref($next)) && (my $stringified_next = "$next") =~ $scheme_re) {
-    $scheme = substr($stringified_next, $-[0], $+[0] - $-[0])
-  }
+  $scheme = _arg2scheme($args) if (! ref($args));
+  $scheme = $next->scheme      if ((! defined($scheme)) && defined($next) && blessed($next) && $next->can('scheme'));
+  $scheme = _arg2scheme($next) if ((! defined($scheme)) && defined($next) && ! ref($next));
 
   my $self;
-
   $self = $class->_new_from_specific($args, $scheme) if defined $scheme;
   $self = $class->_new_from_generic ($args)          unless blessed($self);
   $self = $class->_new_from_common  ($args)          unless blessed($self);

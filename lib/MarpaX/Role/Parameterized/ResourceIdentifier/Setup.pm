@@ -31,6 +31,25 @@ sub remove_dot_segments_strict   { __PACKAGE__->uri_compat() ?           ! $URI:
 sub default_query_form_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_QUERY_FORM_DELIMITER || '&') : ($MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER || '&') }
 sub default_segment_parameter_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_SEGMENT_PARAMETER_DELIMITER || ';') : ($MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER || ';') }
 sub default_user_password_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_USER_PASSWORD_DELIMITER || ':') : ($MarpaX::RI::DEFAULT_USER_PASSWORD_DELIMITER || ':') }
+#
+# Specific to uri compat mode:
+#
+sub arg2arg {
+  my ($class, $arg) = @_;
+  return $arg unless defined $arg;
+  return $arg unless $class->uri_compat;
+  return $arg unless ! ref($arg);
+  $arg = "$arg"; # Explicit stringification
+  #
+  # Copy from URI:
+  # Get rid of potential wrapping
+  #
+  $arg =~ s/^<(?:URL:)?(.*)>$/$1/;
+  $arg =~ s/^"(.*)"$/$1/;
+  $arg =~ s/^\s+//;
+  $arg =~ s/\s+$//;
+  $arg
+}
 
 with 'MooX::Singleton';
 

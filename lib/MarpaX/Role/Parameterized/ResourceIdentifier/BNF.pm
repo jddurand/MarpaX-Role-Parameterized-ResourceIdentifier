@@ -293,17 +293,7 @@ sub BUILDARGS {
     }
   }
 
-  if ($setup->uri_compat) {
-    #
-    # Copy from URI:
-    # Get rid of potential wrapping
-    #
-    $args{input} =~ s/^<(?:URL:)?(.*)>$/$1/;
-    $args{input} =~ s/^"(.*)"$/$1/;
-    $args{input} =~ s/^\s+//;
-    $args{input} =~ s/\s+$//;
-  }
-
+  $args{input} = $setup->arg2arg($args{input});
   \%args
 }
 
