@@ -434,7 +434,7 @@ role {
   #
   # Depending on spec, percent-encoding stuff is UTF-8 or ASCII
   #
-  my $pct_encoded_charset = ($spec eq 'uri') ? 'ASCII' : 'UTF-8';
+  my $pct_encoded_default_charset = ($spec eq 'uri') ? 'ASCII' : 'UTF-8';
 
   if ($extends) {
     #
@@ -1820,7 +1820,9 @@ _PORT_INLINED
                          #
                          try {
                            my $character = $_;
-                           my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode($pct_encoded_charset, $character, Encode::FB_CROAK)));
+                           my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
+                                                                                                        //
+                                                                                                        $pct_encoded_default_charset, $character, Encode::FB_CROAK)));
                            $reencoded_length = length($reencoded);
                          } catch {
                            $self->_logger->tracef('%s', "$_");
@@ -1885,7 +1887,9 @@ _PORT_INLINED
                        return uc(join('',
                                       map {
                                         '%' . unpack('H2', $_)
-                                      } split(//, Encode::encode($pct_encoded_charset, $string, Encode::FB_CROAK))
+                                      } split(//, Encode::encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
+                                                                 //
+                                                                 $pct_encoded_default_charset, $string, Encode::FB_CROAK))
                                      )
                                 )
                      }
@@ -1899,7 +1903,9 @@ _PORT_INLINED
                            $rc .= uc(join('',
                                           map {
                                             '%' . unpack('H2', $_)
-                                          } split(//, Encode::encode($pct_encoded_charset, $c, Encode::FB_CROAK))
+                                          } split(//, Encode::encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
+                                                                     //
+                                                                     $pct_encoded_default_charset, $c, Encode::FB_CROAK))
                                          ))
                          } catch {
                            $self->_logger->tracef('%s', "$_");
