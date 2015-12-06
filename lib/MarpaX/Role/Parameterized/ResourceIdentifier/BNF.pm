@@ -247,11 +247,59 @@ our $check_BUILDARGS_Dict = compile(slurpy Dict[
 # The overloads
 # -------------
 use overload (
-              '""'     => sub { $_[0]->raw },
-              '=='     => sub { $setup->uri_compat ?  _obj_eq(@_) : $_[0]->normalized eq $_[1]->normalized },
-              '!='     => sub { $setup->uri_compat ? !_obj_eq(@_) : $_[0]->normalized ne $_[1]->normalized },
+              '""'     => \&_stringify,
+              'cmp'    => \&_string_cmp,
+              '<=>'    => \&_num_cmp,
               fallback => 1,
              );
+
+sub _stringify { $_[0]->normalized }
+sub _string_cmp {
+  my ($a, $b, $swapped) = @_;
+
+  #
+  # If we are called this is because one of $a or $b is an object
+  # we handle. Can be both.
+  #
+
+  my $orig_a = $a;
+  my $orig_b = $b;
+
+  my $a_top = (blessed($a) && Role::Tiny::does_role($a, __PACKAGE__)) ? $a->role_params->{top} : undef;
+  my $b_top = (blessed($b) && Role::Tiny::does_role($b, __PACKAGE__)) ? $b->role_params->{top} : undef;
+
+  if (defined($a) && ! defined($a_top)) {
+    try {
+      $a = $b_top->new("$a");
+    } catch {
+      $b->_logger->warnf('%s', "$_");
+      $a = undef;
+      return
+    }
+  }
+
+  if (defined($b) && ! defined($b_top)) {
+    try {
+      $b = $a_top->new("$b");
+    } catch {
+      $a->_logger->warnf('%s', "$_");
+      $b = undef;
+      return
+    }
+  }
+
+  if ((! defined($a)) || (! defined($b))) {
+    #
+    # One of them is guaranteed to be undef
+    #
+    my $o = $orig_a // $orig_b;
+    $o->_logger->warn('Comparison failure - Assuming a value of 1');
+    return 1;
+  }
+
+  $swapped ? "$b" cmp "$a" : "$a" cmp "$b"
+}
+sub _num_cmp { goto &_string_cmp }
 
 # Copy from URI
 # Check if two objects are the same object
@@ -382,6 +430,11 @@ role {
   my $pct_encoded = $PARAMS->{pct_encoded};
   my $server      = $PARAMS->{server};
   my $userpass    = $PARAMS->{userpass};
+
+  #
+  # Depending on spec, percent-encoding stuff is UTF-8 or ASCII
+  #
+  my $pct_encoded_charset = ($spec eq 'uri') ? 'ASCII' : 'UTF-8';
 
   if ($extends) {
     #
@@ -548,6 +601,7 @@ role {
     # To identify this special, $field and $lhs are both the
     # empty string, i.e. a situation that can never happen during
     # parsing
+    #
     #
     # Normalize
     #
@@ -1524,15 +1578,15 @@ HOST_INLINED
     }
     #
     # port: input/output is raw
-    # Default is default_port
+    # Default is default_port. No need to inline: no dependency on $top
     #
-    my $port_inlined = <<PORT_INLINED;
-my \$self = shift;
-my \$rc = \$self->_port(\@_);
-\$rc = \$self->default_port if ((! defined(\$rc)) || ! length(\$rc));
-\$rc
-PORT_INLINED
-    install_modifier($whoami, 'fresh', port => eval "sub { $port_inlined }");
+    install_modifier($whoami, 'fresh', port =>
+                     sub {
+                       my $rc = ($#_ > 0) ? $_[0]->_port(@_[1..$#_]) : $_[0]->_port;
+                       $rc = $_[0]->default_port if ((! defined($rc)) || ! length($rc));
+                       $rc
+                     }
+                    );
     #
     # _port: input/output is raw
     # No default.
@@ -1683,7 +1737,7 @@ _PORT_INLINED
                          #
                          try {
                            my $character = $_;
-                           my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode('UTF-8', $character, Encode::FB_CROAK)));
+                           my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode($pct_encoded_charset, $character, Encode::FB_CROAK)));
                            $reencoded_length = length($reencoded);
                          } catch {
                            $self->_logger->tracef('%s', "$_");
@@ -1748,7 +1802,7 @@ _PORT_INLINED
                        return uc(join('',
                                       map {
                                         '%' . unpack('H2', $_)
-                                      } split(//, Encode::encode('UTF-8', $string, Encode::FB_CROAK))
+                                      } split(//, Encode::encode($pct_encoded_charset, $string, Encode::FB_CROAK))
                                      )
                                 )
                      }
@@ -1762,7 +1816,7 @@ _PORT_INLINED
                            $rc .= uc(join('',
                                           map {
                                             '%' . unpack('H2', $_)
-                                          } split(//, Encode::encode('UTF-8', $c, Encode::FB_CROAK))
+                                          } split(//, Encode::encode($pct_encoded_charset, $c, Encode::FB_CROAK))
                                          ))
                          } catch {
                            $self->_logger->tracef('%s', "$_");
