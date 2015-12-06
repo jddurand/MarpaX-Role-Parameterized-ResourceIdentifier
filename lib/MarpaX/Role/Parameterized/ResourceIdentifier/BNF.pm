@@ -1373,7 +1373,7 @@ EQ
     my $component_inlined = <<COMPONENT_INLINED;
 # my (\$self, \$argument) = \@_;
 #
-# Returned value is always the canonical form in uri compat mode, the raw value is non-uri compat mode
+# Returned value is always the escaped form in uri compat mode, the raw value is non-uri compat mode
 #
 if (! defined \$_[1]) {
   return \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct->{$component} :  \$_[0]->_raw_struct->{$component}
@@ -1396,6 +1396,89 @@ COMPONENT_INLINED
   # Some methods specific to the generic syntax as per original URI
   #
   if ($is_generic) {
+    #
+    # query_form: copy of ooriginal's URI logic
+    #
+    install_modifier($whoami, 'fresh', query_form =>
+                     sub {
+                       my $old = $_[0]->query;
+                       if ($#_ > 0) {
+                         my @args;
+                         # Try to set query string
+                         my $delim;
+                         my $r = $_[1];
+                         if (ref($r) eq "ARRAY") {
+                           $delim = $_[2];
+                           @args = @{$r};
+                         } elsif (ref($r) eq "HASH") {
+                           $delim = $_[2];
+                           @args = %{$r};
+                         } else {
+                           @args = @_[1..$#_];
+                         }
+                         $delim = pop(@args) if (@args % 2);
+
+                         my @query;
+                         while (my ($key, $vals) = splice(@args, 0, 2)) {
+                           $key = '' unless defined $key;
+                           $key =~ s/([;\/?:@&=+,\$\[\]%])/$_[0]->percent_encode($1)/eg;
+                           $key =~ s/ /+/g;
+                           $vals = [ref($vals) eq "ARRAY" ? @{$vals} : $vals];
+                           for my $val (@{$vals}) {
+                             $val = '' unless defined $val;
+                             $val =~ s/([;\/?:@&=+,\$\[\]%])/$_[0]->percent_encode($1)/eg;
+                             $val =~ s/ /+/g;
+                             push(@query, "$key=$val");
+                           }
+                         }
+                         if (@query) {
+                           unless ($delim) {
+                             $delim = $1 if $old && $old =~ /([&;])/;
+                             $delim ||= $setup->default_query_form_delimiter;
+                           }
+                           $_[0]->_query_form(join($delim, @query));
+                         } else {
+                           $_[0]->_query_form(undef);
+                         }
+                       }
+                       return if !defined($old) || !length($old) || !defined(wantarray);
+                       return unless $old =~ /=/; # not a form
+                       map { s/\+/ /g; $_[0]->unescape($_) } map { /=/ ? split(/=/, $_, 2) : ($_ => '')} split(/[&;]/, $old);
+                     }
+                    );
+    install_modifier($whoami, 'fresh', query_keywords =>
+                     sub {
+                       my $old = $_[0]->query;
+                       if ($#_ > 0) {
+                         # Try to set query string
+                         my @copy = @_[1..$#_];
+                         @copy = @{$copy[0]} if @copy == 1 && ref($copy[0]) eq "ARRAY";
+                         for (@copy) { s/([;\/?:@&=+,\$\[\]%])/$_[0]->percent_encode($1)/eg; }
+                         $_[0]->path_query($_[0]->_raw_struct->{path}, @copy ? join('+', @copy) : undef);
+                       }
+                       return if !defined($old) || !defined(wantarray);
+                       return if $old =~ /=/;  # not keywords, but a form
+                       map { $_[0]->unescape($_) } split(/\+/, $old, -1);
+                     }
+                    );
+    my $_query_form_inlined = <<_QUERY_FORM_INLINED;
+# my (\$self, \$argument) = \@_;
+my \$rc = \$_[0]->_escaped_struct->{query};
+
+if (\$#_ > 0) {
+  my \$new_query = \$_[1];
+  my \%hash = (
+                scheme    => \$_[0]->_raw_struct->{scheme},
+                authority => \$_[0]->_raw_struct->{authority},
+                path      => \$_[0]->_raw_struct->{path},
+                query     => \$new_query,
+                fragment  => \$_[0]->_raw_struct->{fragment}
+              );
+  \$_[0] = $top->new(\$_[0]->_recompose(\\\%hash));
+}
+\$rc
+_QUERY_FORM_INLINED
+    install_modifier($whoami, 'fresh', _query_form => eval "sub { $_query_form_inlined }");
     my $path_query_inlined = <<PATH_QUERY_INLINED;
 # my (\$self, \$argument) = \@_;
 #
@@ -1406,7 +1489,7 @@ my \$query = \$_[0]->_escaped_struct->{query};
 \$rc .= '?' . \$query if (defined \$query);
 
 if (\$#_ > 0) {
-  my (\$new_path, \$new_query) = (\$_[1], undef);
+  my (\$new_path, \$new_query) = (\$_[1] // '', undef);  # A path is never undef
   if (\$_[1] =~ /\\?/g) {
     my \$after_question_mark_pos = pos(\$_[1]);
     \$new_path  = substr(\$_[1], 0, \$after_question_mark_pos - 1);
