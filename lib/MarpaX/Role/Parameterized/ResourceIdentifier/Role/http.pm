@@ -11,7 +11,7 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::http;
 
 use Moo::Role;
 
-around default_port => sub { 80 };
+around build_default_port => sub { 80 };
 around normalized => sub {
   my ($orig, $self) = (shift, shift);
   my $normalized = $self->$orig(@_);
