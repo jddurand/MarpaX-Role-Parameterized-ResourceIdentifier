@@ -11,4 +11,6 @@ package MarpaX::Role::Parameterized::ResourceIdentifier::Role::ldap;
 
 use Moo::Role;
 
+around default_port => sub { 389 };
+
 1;
