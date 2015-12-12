@@ -564,7 +564,7 @@ role {
   #
   # Parse method installed directly in the BNF package
   #
-  my $BNF = "inaccessible is ok by default\n:start ::= $start\n$bnf";
+  my $BNF = "inaccessible is ok by default\nlexeme default = latm => 1\n:start ::= $start\n$bnf";
   my $grammar = Marpa::R2::Scanless::G->new({source => \$BNF});
   my %recognizer_option = (
                            trace_file_handle => $trace_file_handle,
@@ -701,13 +701,12 @@ role {
                      if (defined $field) {
                        #
                        # For performance reason, because we KNOW to what we are talking about
-                       # we use explicit push() and set instead of the accessors
+                       # we use explicit push() and set instead of the accessors. When default is
+                       # a ref, it is assumed to be an ARRAY ref, initialized consistently
+                       # throughout all internal structures.
                        #
-                       if ($field eq 'segments') {
-                         #
-                         # Segments is special
-                         #
-                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{segments}}, $array_ref->[$_]) for 0..$_MAX_STRUCTS
+                       if (ref $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[0]->{$field}) {
+                         push(@{$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field}}, $array_ref->[$_]) for 0..$_MAX_STRUCTS
                        } else {
                          $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for 0..$_MAX_STRUCTS
                        }
