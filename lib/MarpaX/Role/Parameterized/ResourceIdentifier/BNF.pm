@@ -442,7 +442,10 @@ role {
     #
     requires 'can_scheme';
   }
-
+  #
+  # Keep track of installed methods
+  #
+  my %done_methods = ();
   #
   # Make sure $whoami package is doing MooX::Role::Logger is not already
   #
@@ -614,7 +617,10 @@ role {
     # Parse (may croak)
     #
     $r->read(\$input);
-    croak "[$type] Parse of the input is ambiguous" if $r->ambiguous;
+    #
+    # We accept an ambiguous parse only if there is no parse tree value: then the default values apply
+    #
+    my $is_ambiguous = $r->ambiguous;
     #
     # Check result
     #
@@ -629,8 +635,15 @@ role {
     if (! defined($registrations)) {
       $registrations{$whoami} = $r->registrations();
     }
-    my $value = ${$value_ref};
-    do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0..$_MAX_STRUCTS;
+    if (defined($value_ref)) {
+      my $value = ${$value_ref};
+      do { $self->{_structs}->[$_]->{output} = $value->[$_] } for 0..$_MAX_STRUCTS;
+    } else {
+      #
+      # An undefined parse tree value is accepted only if input is ambiguous
+      #
+      croak "[$whoami] Undefine parse tree value" unless $is_ambiguous;
+    }
     #
     # No return value from parse
     #
@@ -761,6 +774,10 @@ role {
     my $inlined = "\$_[0]->{_structs}->[$_RAW_STRUCT]->{$_}";
     install_modifier($whoami, 'fresh', "_$_" => eval "sub { $inlined }" );
   }
+  #
+  # Top package
+  #
+  install_modifier($whoami, 'fresh', __top => sub { $top } );
   #
   # List of fields
   #
@@ -1389,6 +1406,7 @@ foreach (qw/@recompose_fields/) {
 #
 (\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->$component
 COMPONENT_INLINED
+    $done_methods{$component}++;
     install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }" || croak $@);
   }
   #
@@ -1396,7 +1414,7 @@ COMPONENT_INLINED
   #
   if ($is_generic) {
     #
-    # query_form: copy of ooriginal's URI logic
+    # query_form: copy of original's URI logic
     #
     install_modifier($whoami, 'fresh', query_form =>
                      sub {
@@ -1933,6 +1951,21 @@ _PORT_INLINED
                    }
                   );
 
+  #
+  # All other fields are by default read-only accessors to escaped versions in uri compat mode, raw versions in default mode
+  #
+  foreach (grep { ! exists($done_methods{$_}) } @all_fields) {
+    next if $whoami->can($_);
+    my $field_inlined = <<FIELD_INLINED;
+# my (\$self, \$argument) = \@_;
+#
+# Returned value is always the escaped form in uri compat mode, the raw value is non-uri compat mode
+#
+return \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct->{$_} :  \$_[0]->_raw_struct->{$_}
+FIELD_INLINED
+    $done_methods{$_}++;
+    install_modifier($whoami, 'fresh',  $_ => eval "sub { $field_inlined }" || croak $@);
+  }
 };
 
 # =============================================================================
