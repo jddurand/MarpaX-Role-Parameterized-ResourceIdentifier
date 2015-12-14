@@ -1624,8 +1624,8 @@ my \$rc = \$_[0]->_unescaped_struct->{host};
 #
 # Remove brackets if any (case of ipv6)
 #
-\$rc =~ s/^\\\[//;
-\$rc =~ s/\\\]\$//;
+\$rc =~ s/^\\\[// if (defined \$rc);
+\$rc =~ s/\\\]\$// if (defined \$rc);
 
 if (\$#_ > 0) {
   my \$unreserved = \$_[0]->unreserved;
