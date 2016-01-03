@@ -1,6 +1,142 @@
 Changelog for MarpaX-Role-Parameterized-ResourceIdentifier
 
-0.001 2015-10-09T04:21:37
+0.002 2015-11-08T19:05:18
+ [Jean-Damien Durand <jeandamiendurand@free.fr>]
+ - dev+: put instance methods in the parameterized code
+ - dev+: $URI::ABS_ALLOW_RELATIVE_SCHEME
+ - dev+: canonical(), access to some internals but not all
+ - t+: use is_absolute on base object in abs()
+ - t+: uri_compat at runtime and is_absolute support
+ - dev+: revisited engine
+ - dev+: Fix BUILDARGS
+ - dev+: when calling the builders do nothing else but that
+ - dev+: object construction optimization
+ - dev+: make sure the lazy builders are called after object construction
+ - dev+: add reg_name_is_domain_name in slurpy check, removed lazy on
+   _normalizer_wrapper and _converter_wrapper
+ - dev+: Perl op optimization
+ - dev+: Algorithmic optimization for normalizers
+ - dev+: clone of a MooX::Struct is faster than a new
+ - dev+: cache symbol_display_form
+ - dev+: profiling bis
+ - dev+: profiling
+ - dev+: fix bug in remove_dot_segments
+ - dev+: perl op optim
+ - dev+: abs() using an object instead of a string for absolute reference
+ - dev+: abs()
+ - dev+: Generic.path is never undef
+ - dev+: Removed a logging statement
+ - dev+: inlined version of percent_encoding_normalizer
+ - dev+: inlined sub
+ - dev+: pretty Data::Printer'ing
+ - dev+: MooX::Struct stringification
+ - dev+: store explicitely final value after all normalizations
+ - dev+: back to after instead of around for input
+ - dev+: Types simplification
+ - t+: BUILDARGS centralization
+ - dev+: remove some unused variables
+ - dev+: incorporate BUILDARGS in BNF
+ - dev+: has_recognized scheme is ro
+ - dev+: overload
+ - dev+: prefer around input instead of after input
+ - dev+: externalized unescape method, fo not use trigger but explicit
+   parsing at BUILD or after input is set
+ - dev+: build_path_segment_normalizer
+ - dev+: moved some specs from _common to _generic
+ - dev+: variables renaming
+ - dev+: build_percent_encoding_normalizer
+ - dev+
+ - dev+: normalizers fix
+ - dev+: default_port
+ - dev+: indeed, _indice_description label fix
+ - dev+: Make _indice_description an attribute
+ - dev+: cosmetic change in callback names array
+ - dev+: normalization and convertion ladders optimization, do it once also
+   before parsing
+ - dev+: normalization before parsing
+ - dev+: use Undef instead of defined
+ - dev+: removed unused files
+ - dev+: use centralzed BUILDARGS
+ - dev+: fixes
+ - t+
+ - dev+: factorization
+ - BNF role refactorization
+ - dev+: without Data::Dumper -;
+ - dev+: use Type::Params
+ - dev+: new_abs() and removal of all path derivations
+ - t+: new_abs
+ - dev+: removed unused use_utf8 constraint
+ - dev+: fix typo warnff
+ - dev+: is_absolute method
+ - Parameterized/ResourceIdentifier.pm: more generic, support of
+   URI_ENCODED and IRI_ENCODED callbacks
+ - ResourceIdentifier/BUILDARGS.pm: a little bit simplified
+ - ResourceIdentifier/_top.pm: uri_compat
+ - dev+: BUILD
+ - dev+: Removal of all __DATA__ section
+ - dev+: Install default (empty) normalizers in _common
+ - dev+: use _common and _generic instead of Common and Generic
+ - dev+: Fixed structure members accessors
+ - dev+: moved all Generic normalizers in the role
+ - dev+: Added escaped section
+ - dev+: path segment normalization
+ - dev+: add decoder
+ - dev+: get  once
+ - dev+: add external field name when calling normalization
+ - dev+: keep octets and al. information
+ - dev+: Fix BUILARGS and always do a copy of %args before jumping to
+   subclasses
+ - dev+: Fix _structs initialization
+ - dev+: deal with inheritance
+ - dev+: use Data::Dumper to see Character Normalization effect in trace
+   mode
+ - dev+: Removal of unused "normalize" method and require
+   "is_character_normalized", "character_normalization_strategy" in the
+   generic class
+ - dev+: The return of uri_compat
+ - dev+: More generic constructor
+ - dev+: put normalizer in the generic instance, not in the grammar and use
+   $self as argument to Marpa::R2s value()
+ - dev+: removed non-needed ";"s
+ - dev+: removed unused escape method
+ - dev+: descriptio of indices factorization
+ - dev+: fixed comments
+ - dev+: changed internal indices
+ - dev+: normalization
+ - dev+: normalization fix
+ - dev+: normalizer
+ - dev+: isdn, nfc
+ - dev+: eq and normalization
+ - dev+: revmoed fragments
+ - dev+: use setters
+ - dev+: explicits rw (for the moment)
+ - dev+: segments defaults to "" as per URI
+ - dev+: escape/unescape modes
+ - dev+: fix mode without logging
+ - dev+: engine fix
+ - More attributes in BNF
+ - use ${^MATCH} instead of $1 in percent_encode()
+ - Renamed Singleton to Grammars
+ - A lor of changes + wrapping Marpa log correctly (finally!)
+ - Use of  to have logging or not
+ - Factorization of different new methods
+ - TRUE and FALSE constants
+ - Revisited scheme parameter check
+ - removed some catch{} used for debugging
+ - use Type::Tiny for parameter type checking
+ - Removed a confusing file
+ - dev+: _uri_compat
+ - dev+: less hacks
+ - dev+: a bit better trace -;
+ - Structures generic accessors and Logging category fix
+ - Add URI, URI_reference, absolute_URI and relative_ref
+ - Make public method required
+ - soft revert Parameterized/ResourceIdentifier.pm: Note saying caller is
+   required to use MooX::ClassAttribute
+ - Parameterized/ResourceIdentifier.pm: Note saying caller is required to
+   use MooX::ClassAttribute
+
+0.001 2015-10-09T04:22:15
  [Jean-Damien Durand <jeandamiendurand@free.fr>]
  - meta files for initial release
  - xtest

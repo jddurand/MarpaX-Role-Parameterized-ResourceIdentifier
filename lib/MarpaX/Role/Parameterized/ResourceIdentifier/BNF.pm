@@ -616,7 +616,15 @@ role {
     #
     # Parse (may croak)
     #
-    $r->read(\$input);
+    try {
+      $r->read(\$input)
+    } catch {
+      my $error = $_;
+      $self->_logger->tracef("[%s] Progress at failure: %s", $whoami, $r->show_progress());
+      $self->_logger->tracef("[%s] Input parsed: %s", $whoami, $input);
+      $self->_logger->tracef("[%s] Terminals expected at failure: %s", $whoami, $r->terminals_expected());
+      croak $error;
+    };
     #
     # We accept an ambiguous parse only if there is no parse tree value: then the default values apply
     #
@@ -668,10 +676,12 @@ role {
                        # Call extended implementation
                        #
                        my $parent_self = $extends->new({input => $self->input});
+                       local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::parent_self = $parent_self;
                        #
                        # Get the _structs
                        #
                        my $parent_structs = $parent_self->{_structs};
+                       local $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::parent_structs = $parent_structs;
                        #
                        # Call our method
                        #
@@ -724,6 +734,7 @@ role {
                          $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::_structs->[$_]->{$field} = $array_ref->[$_] for 0..$_MAX_STRUCTS
                        }
                      }
+                     # $self->_logger->tracef('[%s] %s ::= %s => %s', $whoami, $lhs, join('', @rhs), $array_ref);
                      $array_ref
                    }
                   );
@@ -1800,7 +1811,9 @@ _PORT_INLINED
   #
   install_modifier($whoami, 'fresh',  percent_decode =>
                    sub {
-                     my ($self, $string, $characters_to_decode) = @_;
+                     my ($self, $string, $characters_to_decode, $ascii_fallback) = @_;
+
+                     my $escape_character = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::escape_character // '%';
 
                      my $unescaped_ok = 1;
                      my $unescaped;
@@ -1812,7 +1825,15 @@ _PORT_INLINED
                        $unescaped = MarpaX::RFC::RFC3629->new($octets)->output
                      } catch {
                        $self->_logger->tracef('%s', "$_");
-                       $unescaped_ok = 0;
+                       if ($ascii_fallback) {
+                         #
+                         # Take any non-converted sequence and replace with the ASCII equivalent
+                         #
+                         $unescaped = $string;
+                         $unescaped =~ s/%[A-Fa-f0-9]{2}/chr(hex(${^MATCH}))/egp;
+                       } else {
+                         $unescaped_ok = 0;
+                       }
                        return
                      };
                      #
@@ -1837,7 +1858,7 @@ _PORT_INLINED
                          #
                          try {
                            my $character = $_;
-                           my $reencoded = join('', map { '%' . uc(unpack('H2', $_)) } split(//, encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
+                           my $reencoded = join('', map { $escape_character . uc(unpack('H2', $_)) } split(//, encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
                                                                                                         //
                                                                                                         $pct_encoded_default_charset, $character, Encode::FB_CROAK)));
                            $reencoded_length = length($reencoded);
@@ -1870,10 +1891,10 @@ _PORT_INLINED
   # =============================================================================================
   install_modifier($whoami, 'fresh', unescape =>
                    sub {
-                     my ($self, $string, $characters_to_decode) = @_;
+                     my ($self, $string, $characters_to_decode, $ascii_fallback) = @_;
 
                      while ($string =~ m/(?:%[0-9A-Fa-f]{2})+/gcp) {
-                       my $replacement = $self->percent_decode(${^MATCH}, $characters_to_decode);
+                       my $replacement = $self->percent_decode(${^MATCH}, $characters_to_decode, $ascii_fallback);
                        substr($string, $-[0], $+[0] - $-[0], $replacement);
                        pos($string) = $-[0] + length($replacement);
                      }
@@ -1896,6 +1917,7 @@ _PORT_INLINED
                    sub {
                      my ($self, $string, $characters_not_to_encode, $characters_to_encode) = @_;
 
+                     my $escape_character = $MarpaX::Role::Parameterized::ResourceIdentifier::BNF::escape_character // '%';
                      if (! defined($characters_not_to_encode)) {
                        #
                        # A version that is doing it in one go. Note that eventual
@@ -1903,7 +1925,7 @@ _PORT_INLINED
                        #
                        return uc(join('',
                                       map {
-                                        '%' . unpack('H2', $_)
+                                        $escape_character . unpack('H2', $_)
                                       } split(//, Encode::encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
                                                                  //
                                                                  $pct_encoded_default_charset, $string, Encode::FB_CROAK))
@@ -1919,7 +1941,7 @@ _PORT_INLINED
                          try {
                            $rc .= uc(join('',
                                           map {
-                                            '%' . unpack('H2', $_)
+                                            $escape_character . unpack('H2', $_)
                                           } split(//, Encode::encode($MarpaX::Role::Parameterized::ResourceIdentifier::BNF::pct_encoded_default_charset
                                                                      //
                                                                      $pct_encoded_default_charset, $c, Encode::FB_CROAK))
@@ -2151,12 +2173,13 @@ BEGIN {
                                            RESOLVE_PACKAGE
                                            RESOLVE_PACKAGE_SOURCE
                                            PER_PARSE_CONSTRUCTOR
+                                           TREE_MODE
                                          /) {
         Marpa::R2::exception(
                              "Attempt to reuse registrations failed:\n",
                              "  Registration data is not a hash containing all necessary keys:\n",
                              "  Got : " . ((ref($hash) eq 'HASH') ? join(', ', sort keys %{$hash}) : '') . "\n",
-                             "  Want: CLOSURE_BY_RULE_ID, CLOSURE_BY_SYMBOL_ID, NULL_VALUES, PER_PARSE_CONSTRUCTOR, REGISTRATIONS, RESOLVE_PACKAGE, RESOLVE_PACKAGE_SOURCE\n"
+                             "  Want: CLOSURE_BY_RULE_ID, CLOSURE_BY_SYMBOL_ID, NULL_VALUES, PER_PARSE_CONSTRUCTOR, REGISTRATIONS, RESOLVE_PACKAGE, RESOLVE_PACKAGE_SOURCE, TREE_MODE\n"
                             );
       }
       $recce->[Marpa::R2::Internal::Recognizer::NULL_VALUES] = $hash->{NULL_VALUES};
@@ -2166,6 +2189,7 @@ BEGIN {
       $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE] = $hash->{RESOLVE_PACKAGE};
       $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE_SOURCE] = $hash->{RESOLVE_PACKAGE_SOURCE};
       $recce->[Marpa::R2::Internal::Recognizer::PER_PARSE_CONSTRUCTOR] = $hash->{PER_PARSE_CONSTRUCTOR};
+      $recce->[Marpa::R2::Internal::Recognizer::TREE_MODE] = $hash->{TREE_MODE};
     }
     return {
             NULL_VALUES            => $recce->[Marpa::R2::Internal::Recognizer::NULL_VALUES],
@@ -2174,7 +2198,8 @@ BEGIN {
             CLOSURE_BY_RULE_ID     => $recce->[Marpa::R2::Internal::Recognizer::CLOSURE_BY_RULE_ID],
             RESOLVE_PACKAGE        => $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE],
             RESOLVE_PACKAGE_SOURCE => $recce->[Marpa::R2::Internal::Recognizer::RESOLVE_PACKAGE_SOURCE],
-            PER_PARSE_CONSTRUCTOR  => $recce->[Marpa::R2::Internal::Recognizer::PER_PARSE_CONSTRUCTOR]
+            PER_PARSE_CONSTRUCTOR  => $recce->[Marpa::R2::Internal::Recognizer::PER_PARSE_CONSTRUCTOR],
+            TREE_MODE              => $recce->[Marpa::R2::Internal::Recognizer::TREE_MODE],
            };
   } ## end sub registrations
 

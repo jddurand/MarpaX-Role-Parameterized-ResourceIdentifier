@@ -4,19 +4,11 @@
 
 =head1 NAME
 
-MarpaX::Role::Parameterized::ResourceIdentifier - MarpaX Parameterized Role for Resource Identifiers as per RFC3986 and RFC3987
+MarpaX::Role::Parameterized::ResourceIdentifier::BNF - Resource Identifier BNF role
 
 =head1 VERSION
 
-version 0.001
-
-=head1 SEE ALSO
-
-L<Uniform Resource Identifier (URI): Generic Syntax|http://tools.ietf.org/html/rfc3986>
-
-L<Internationalized Resource Identifier (IRI): Generic Syntax|http://tools.ietf.org/html/rfc3987>
-
-L<Formats for IPv6 Scope Zone Identifiers in Literal Address Formats|https://tools.ietf.org/html/draft-fenner-literal-zone-02>
+version 0.002
 
 =for :stopwords cpan testmatrix url annocpan anno bugtracker rt cpants kwalitee diff irc mailto metadata placeholders metacpan
 
