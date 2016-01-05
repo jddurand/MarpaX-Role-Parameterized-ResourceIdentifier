@@ -77,7 +77,7 @@ sub _generic_new {
          ipv6_addrz    => undef,
          ipvfuture     => undef,
          zoneid        => undef,
-         segments      => $setup->uri_compat ? [''] : []
+         segments      => []
         },
         $BLESS_GENERIC
        )
@@ -341,7 +341,6 @@ sub BUILDARGS {
     }
   }
 
-  $args{input} = $setup->arg2arg($args{input});
   \%args
 }
 
@@ -1081,13 +1080,6 @@ role {
                      #
                      my $have_slash = @{$wself_struct->{segments}} && ! length($wself_struct->{segments}->[-1]);
                      #
-                     # In uri_compat mode, first element is empty. This should always be the case, though we control that.
-                     #
-                     if ($setup->uri_compat) {
-                       shift(@wself_dirs) if @wself_dirs && ! length $wself_dirs[0];
-                       shift(@wbase_dirs) if @wbase_dirs && ! length $wbase_dirs[0];
-                     }
-                     #
                      # We want to have the equivalent of basename() on @wbase_dirs and @wself_dirs
                      # Query and eventual fragments are considered part of the basename
                      #
@@ -1399,12 +1391,7 @@ EQ
     my @recompose_fields = (($component eq 'opaque') || $is_common) ? qw/scheme opaque fragment/ : qw/scheme authority path query fragment/;
     my $component_inlined = <<COMPONENT_INLINED;
 # my (\$self, \$argument) = \@_;
-#
-# Returned value is always the escaped form in uri compat mode, the raw value is non-uri compat mode
-#
-if (! defined \$_[1]) {
-  return \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct->{$component} :  \$_[0]->_raw_struct->{$component}
-}
+return \$_[0]->_raw_struct->{$component} if ! defined \$_[1];
 #
 # Always reparse
 #
@@ -1983,7 +1970,7 @@ _PORT_INLINED
 #
 # Returned value is always the escaped form in uri compat mode, the raw value is non-uri compat mode
 #
-return \$MarpaX::Role::Parameterized::ResourceIdentifier::BNF::setup->uri_compat ? \$_[0]->_escaped_struct->{$_} :  \$_[0]->_raw_struct->{$_}
+\$_[0]->_raw_struct->{$_}
 FIELD_INLINED
     $done_methods{$_}++;
     install_modifier($whoami, 'fresh',  $_ => eval "sub { $field_inlined }" || croak $@);

@@ -15,7 +15,6 @@ use Type::Library
 use Scalar::Util qw/blessed/;
 use Types::Standard -all;
 use Type::Utils -all;
-use MarpaX::Role::Parameterized::ResourceIdentifier::Setup;
 use Data::Printer 0.36
   colored       => 1,
   print_escapes => 1,
@@ -80,7 +79,7 @@ use MooX::Struct -rw,
                      ipv6_addrz    => [ isa => Str|Undef,     default => sub { undef } ],
                      ipvfuture     => [ isa => Str|Undef,     default => sub { undef } ],
                      zoneid        => [ isa => Str|Undef,     default => sub { undef } ],
-                     segments      => [ isa => ArrayRef[Str], default => sub {  MarpaX::Role::Parameterized::ResourceIdentifier::Setup->new->uri_compat ? [''] : [] } ],
+                     segments      => [ isa => ArrayRef[Str], default => sub {    [] } ],
                      TO_STRING      => sub { goto &$TO_STRING },
                      _data_printer  => sub { goto &$_data_printer }
                    ];

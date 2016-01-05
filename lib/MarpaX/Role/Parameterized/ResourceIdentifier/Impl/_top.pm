@@ -65,9 +65,6 @@ sub _new_from_generic {
   try {
     use_module($subclass);
     $self = $subclass->new($args);
-  } catch {
-    croak $_ unless $setup->uri_compat;
-    return
   };
 
   $self
@@ -87,7 +84,6 @@ sub _new_from_common {
 sub _arg2scheme {
   my $arg = shift;
   return undef if (! defined $arg);
-  $arg = $setup->arg2arg($arg);
   my $rc;
   if ($arg =~ $scheme_re) {
     $rc = substr($arg, $-[0], $+[0] - $-[0])

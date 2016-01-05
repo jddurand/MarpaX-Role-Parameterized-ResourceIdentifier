@@ -17,39 +17,19 @@ no warnings 'once';
 #
 sub marpa_trace_terminals      { $MarpaX::RI::MARPA_TRACE_TERMINALS   // 0            }
 sub marpa_trace_values         { $MarpaX::RI::MARPA_TRACE_VALUES      // 0            }
-sub uri_compat                 { $MarpaX::RI::URI_COMPAT              // 0            }
 sub plugins_dirname            { $MarpaX::RI::PLUGINS_DIRNAME         || 'Plugins'    }
 sub impl_dirname               { $MarpaX::RI::IMPL_DIRNAME            || 'Impl'       }
 sub can_scheme_methodname      { $MarpaX::RI::CAN_SCHEME_METHODNAME   || 'can_scheme' }
 #
 # The followings can return undef
 #
-sub abs_remote_leading_dots      { __PACKAGE__->uri_compat() ?               $URI::ABS_REMOTE_LEADING_DOTS :               $MarpaX::RI::ABS_REMOTE_LEADING_DOTS }
-sub abs_normalized_base          { __PACKAGE__->uri_compat() ?                                           0 :                   $MarpaX::RI::ABS_NORMALIZED_BASE }
-sub rel_normalized               { __PACKAGE__->uri_compat() ?                                           0 :                        $MarpaX::RI::REL_NORMALIZED }
-sub remove_dot_segments_strict   { __PACKAGE__->uri_compat() ?           ! $URI::ABS_ALLOW_RELATIVE_SCHEME :           ! $MarpaX::RI::ABS_ALLOW_RELATIVE_SCHEME }
-sub default_query_form_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_QUERY_FORM_DELIMITER || '&') : ($MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER || '&') }
-sub default_segment_parameter_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_SEGMENT_PARAMETER_DELIMITER || ';') : ($MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER || ';') }
-sub default_user_password_delimiter { __PACKAGE__->uri_compat() ? ($URI::DEFAULT_USER_PASSWORD_DELIMITER || ':') : ($MarpaX::RI::DEFAULT_USER_PASSWORD_DELIMITER || ':') }
-#
-# Specific to uri compat mode:
-#
-sub arg2arg {
-  my ($class, $arg) = @_;
-  return $arg unless defined $arg;
-  return $arg unless $class->uri_compat;
-  return $arg unless ! ref($arg);
-  $arg = "$arg"; # Explicit stringification
-  #
-  # Copy from URI:
-  # Get rid of potential wrapping
-  #
-  $arg =~ s/^<(?:URL:)?(.*)>$/$1/;
-  $arg =~ s/^"(.*)"$/$1/;
-  $arg =~ s/^\s+//;
-  $arg =~ s/\s+$//;
-  $arg
-}
+sub abs_remote_leading_dots             {   $MarpaX::RI::ABS_REMOTE_LEADING_DOTS                }
+sub abs_normalized_base                 {   $MarpaX::RI::ABS_NORMALIZED_BASE                    }
+sub rel_normalized                      {   $MarpaX::RI::REL_NORMALIZED                         }
+sub remove_dot_segments_strict          { ! $MarpaX::RI::ABS_ALLOW_RELATIVE_SCHEME              }
+sub default_query_form_delimiter        {   $MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER    || '&' }
+sub default_segment_parameter_delimiter {   $MarpaX::RI::DEFAULT_QUERY_FORM_DELIMITER    || ';' }
+sub default_user_password_delimiter     {   $MarpaX::RI::DEFAULT_USER_PASSWORD_DELIMITER || ':' }
 
 with 'MooX::Singleton';
 
