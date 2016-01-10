@@ -649,7 +649,7 @@ role {
       #
       # An undefined parse tree value is accepted only if input is ambiguous
       #
-      croak "[$whoami] Undefine parse tree value" unless $is_ambiguous;
+      croak "[$whoami] Undefined parse tree value" unless $is_ambiguous;
     }
     #
     # No return value from parse
