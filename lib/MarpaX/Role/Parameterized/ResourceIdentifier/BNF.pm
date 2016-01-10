@@ -720,6 +720,11 @@ role {
                      my $field = $mapping->{$lhs};
                      my $criteria = $field || $lhs;
                      my $array_ref = $self->$args2array_sub($criteria, @args);
+                     #
+                     # Too expensive...
+                     #
+                     # $self->_logger->tracef('%s ::= %s %s', $lhs, join(' ', @rhs), \@args);
+                     #
                      if (defined $field) {
                        #
                        # For performance reason, because we KNOW to what we are talking about
