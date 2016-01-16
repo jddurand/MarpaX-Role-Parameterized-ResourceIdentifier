@@ -48,7 +48,7 @@ sub _new_from_specific {
         $self->has_recognized_scheme(!!1);
       }
     } catch {
-        print STDERR $_;
+        # print STDERR $_;
         return
     };
     last if blessed($self);
@@ -85,7 +85,7 @@ sub _new_from_common {
 
 sub _arg2scheme {
   my $arg = shift;
-  return undef if (! defined $arg);
+  return if (! defined $arg);
   my $rc;
   if ($arg =~ $scheme_re) {
     $rc = substr($arg, $-[0], $+[0] - $-[0])
