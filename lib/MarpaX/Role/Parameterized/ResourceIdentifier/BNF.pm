@@ -155,7 +155,6 @@ has pct_encoded                     => ( is => 'ro',  isa => Str|Undef,       la
 has unreserved                      => ( is => 'ro',  isa => RegexpRef|Undef, lazy => 1, builder => 'build_unreserved' );
 has reserved                        => ( is => 'ro',  isa => RegexpRef|Undef, lazy => 1, builder => 'build_reserved' );
 has default_port                    => ( is => 'ro',  isa => Int|Undef,       lazy => 1, builder => 'build_default_port' );
-has secure                          => ( is => 'ro',  isa => Bool,            lazy => 1, builder => 'build_secure' );
 has reg_name_convert_as_domain_name => ( is => 'ro',  isa => Bool,            lazy => 1, builder => 'build_reg_name_convert_as_domain_name' );
 has current_location                => ( is => 'ro',  isa => Str|Undef,       lazy => 1, builder => 'build_current_location' );
 has parent_location                 => ( is => 'ro',  isa => Str|Undef,       lazy => 1, builder => 'build_parent_location' );
@@ -754,7 +753,6 @@ role {
   install_modifier($whoami, 'fresh', build_reserved                        => sub {    $PARAMS->{reserved} });
   install_modifier($whoami, 'fresh', build_unreserved                      => sub {  $PARAMS->{unreserved} });
   install_modifier($whoami, 'fresh', build_default_port                    => sub {                  undef });
-  install_modifier($whoami, 'fresh', build_secure                          => sub {                    !!0 });
   install_modifier($whoami, 'fresh', build_reg_name_convert_as_domain_name => sub {                    !!0 });
   if ($is_common) {
     install_modifier($whoami, 'fresh', build_current_location              => sub {                  undef });
