@@ -47,10 +47,12 @@ sub _new_from_specific {
         $self = $subclass->new($args);
         $self->has_recognized_scheme(!!1);
       }
-    } catch { print STDERR $_; return };
+    } catch {
+        print STDERR $_;
+        return
+    };
     last if blessed($self);
   }
-
   $self
 }
 
