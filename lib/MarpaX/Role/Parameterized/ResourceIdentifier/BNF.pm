@@ -1749,7 +1749,7 @@ _PORT_INLINED
           $_[0]->userinfo("$new$delimiter$pass");
         }
       }
-      return undef unless defined $info;
+      return unless defined $info;
       my $pos = index($info, $delimiter);
       if ($pos > 0) {
         $info = substr($info, 0, $pos - 1);
@@ -1779,9 +1779,9 @@ _PORT_INLINED
           $_[0]->userinfo("$user$delimiter$new");
         }
       }
-      return undef unless defined $info;
+      return unless defined $info;
       my $pos = index($info, $delimiter);
-      return undef unless $pos >= 0;
+      return unless $pos >= 0;
       $info = substr($info, 0, $pos, '');
       $_[0]->unescape($info);
     };
