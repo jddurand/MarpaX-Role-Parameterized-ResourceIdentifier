@@ -778,14 +778,14 @@ role {
     elsif ($_ == 4) { $what = '_converted_struct'  }
     else            { croak 'Internal error'       }
     my $inlined = "\$_[0]->{_structs}->[$_]";
-    install_modifier($whoami, 'fresh', $what => eval "sub { $inlined }" );
+    install_modifier($whoami, 'fresh', $what => eval "sub { $inlined }" ); ## no critic
   }
   #
   # Normalized, escaped and converted structure contents should remain internal, not the raw struct
   #
   foreach (@all_fields) {
     my $inlined = "\$_[0]->{_structs}->[$_RAW_STRUCT]->{$_}";
-    install_modifier($whoami, 'fresh', "_$_" => eval "sub { $inlined }" );
+    install_modifier($whoami, 'fresh', "_$_" => eval "sub { $inlined }" ); ## no critic
   }
   #
   # Top package
@@ -1361,19 +1361,19 @@ croak "\$self should inherit from $top" unless \$self->InstanceOf('$top');
 croak "\$other should inherit from $top" unless \$other->InstanceOf('$top');
 \$self->canonical eq \$other->canonical
 EQ
-  install_modifier($top, 'fresh', eq => eval "sub { $eq_inlined }") unless ($top->can('eq'));
+  install_modifier($top, 'fresh', eq => eval "sub { $eq_inlined }") unless ($top->can('eq')); ## no critic
   #
   # clone(): inlined
   #
-  install_modifier($whoami, 'fresh', clone => eval "sub { $top->new(\$_[0]->{input}) }");
+  install_modifier($whoami, 'fresh', clone => eval "sub { $top->new(\$_[0]->{input}) }"); ## no critic
   #
   # is_absolute(): inlined
   #
-  install_modifier($whoami, 'fresh', is_absolute => eval "sub { defined \$_[0]->{_structs}->[$_RAW_STRUCT]->{scheme} }");
+  install_modifier($whoami, 'fresh', is_absolute => eval "sub { defined \$_[0]->{_structs}->[$_RAW_STRUCT]->{scheme} }"); ## no critic
   #
   # is_relative(): inlined
   #
-  install_modifier($whoami, 'fresh', is_relative => eval "sub { ! defined \$_[0]->{_structs}->[$_RAW_STRUCT]->{scheme} }");
+  install_modifier($whoami, 'fresh', is_relative => eval "sub { ! defined \$_[0]->{_structs}->[$_RAW_STRUCT]->{scheme} }"); ## no critic
   #
   # For all these fields, always apply the same algorithm.
   # Note that opaque field always has precedence overt authority or path or query
@@ -1408,7 +1408,7 @@ foreach (qw/@recompose_fields/) {
 (\$_[0] = $top->new(\$_[0]->_recompose(\\\%hash)))->$component
 COMPONENT_INLINED
     $done_methods{$component}++;
-    install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }" || croak $@);
+    install_modifier($whoami, 'fresh',  $component => eval "sub { $component_inlined }" || croak $@); ## no critic
   }
   #
   # Some methods specific to the generic syntax as per original URI
@@ -1461,7 +1461,15 @@ COMPONENT_INLINED
                        }
                        return if !defined($old) || !length($old) || !defined(wantarray);
                        return unless $old =~ /=/; # not a form
-                       map { s/\+/ /g; $_[0]->unescape($_) } map { /=/ ? split(/=/, $_, 2) : ($_ => '')} split(/[&;]/, $old);
+                       map {
+                           my $this = $_;
+                           $this =~ s/\+/ /g;
+                           $_[0]->unescape($this)
+                       }
+                       map {
+                           /=/ ? split(/=/, $_, 2) : ($_ => '')
+                       }
+                       split(/[&;]/, $old);
                      }
                     );
     install_modifier($whoami, 'fresh', query_keywords =>
@@ -1496,7 +1504,7 @@ if (\$#_ > 0) {
 }
 \$rc
 _QUERY_FORM_INLINED
-    install_modifier($whoami, 'fresh', _query_form => eval "sub { $_query_form_inlined }");
+    install_modifier($whoami, 'fresh', _query_form => eval "sub { $_query_form_inlined }"); ## no critic
     my $path_query_inlined = <<PATH_QUERY_INLINED;
 # my (\$self, \$argument) = \@_;
 #
@@ -1524,7 +1532,7 @@ if (\$#_ > 0) {
 }
 \$rc
 PATH_QUERY_INLINED
-    install_modifier($whoami, 'fresh', path_query => eval "sub { $path_query_inlined }");
+    install_modifier($whoami, 'fresh', path_query => eval "sub { $path_query_inlined }"); ## no critic
     my $path_segments_inlined = <<PATH_SEGMENTS_INLINED;
 # my (\$self, \@segments) = \@_;
 #
@@ -1583,7 +1591,7 @@ if (\$#_ > 0) {
 }
 wantarray ? \@rc : \$rc
 PATH_SEGMENTS_INLINED
-    install_modifier($whoami, 'fresh', path_segments => eval "sub { $path_segments_inlined }");
+    install_modifier($whoami, 'fresh', path_segments => eval "sub { $path_segments_inlined }"); ## no critic
   }
   #
   # Some methods specific to the server schemes syntax as per original URI.
@@ -1615,7 +1623,7 @@ if (\$#_ > 0) {
 }
 \$rc
 USERINFO_INLINED
-    install_modifier($whoami, 'fresh', userinfo => eval "sub { $userinfo_inlined }");
+    install_modifier($whoami, 'fresh', userinfo => eval "sub { $userinfo_inlined }"); ## no critic
     #
     # host: input/output is unescaped
     #
@@ -1666,7 +1674,7 @@ if (\$#_ > 0) {
 }
 \$rc
 HOST_INLINED
-    install_modifier($whoami, 'fresh', host => eval "sub { $host_inlined }");
+    install_modifier($whoami, 'fresh', host => eval "sub { $host_inlined }"); ## no critic
     #
     # Specific host conversion:
     # - ihost returns IRI host when spec is uri
@@ -1718,7 +1726,7 @@ if (\$#_ > 0) {
 }
 \$rc
 _PORT_INLINED
-    install_modifier($whoami, 'around', _port => eval "sub { shift; $_port_inlined }");
+    install_modifier($whoami, 'around', _port => eval "sub { shift; $_port_inlined }"); ## no critic
   }
   #
   # Some methods specific to the user/password schemes syntax as per original URI.
@@ -1976,7 +1984,7 @@ _PORT_INLINED
 \$_[0]->_raw_struct->{$_}
 FIELD_INLINED
     $done_methods{$_}++;
-    install_modifier($whoami, 'fresh',  $_ => eval "sub { $field_inlined }" || croak $@);
+    install_modifier($whoami, 'fresh',  $_ => eval "sub { $field_inlined }" || croak $@); ## no critic
   }
 };
 
@@ -2133,9 +2141,9 @@ INLINED_CALL_LAZY_BUILDER
   exists(\$_[0]->{$name}->{\$_[1]}) ? goto \$_[0]->{$name}->{\$_[1]} : \$_[2]
 INLINED_WITHOUT_ACCESSORS
     if ($call_builder) {
-      push(@array,eval "sub {$inlined_call_lazy_builder}")
+      push(@array,eval "sub {$inlined_call_lazy_builder}") ## no critic
     } else {
-      push(@array,eval "sub {$inlined_without_accessors}")
+      push(@array,eval "sub {$inlined_without_accessors}") ## no critic
     }
   }
   \@array
