@@ -4,11 +4,11 @@
 
 =head1 NAME
 
-MarpaX::Role::Parameterized::ResourceIdentifier::BNF - Resource Identifier BNF role
+MarpaX::Role::Parameterized::ResourceIdentifier - Resource Identifier Parameterized role
 
 =head1 VERSION
 
-version 0.002
+version 0.003
 
 =for :stopwords cpan testmatrix url annocpan anno bugtracker rt cpants kwalitee diff irc mailto metadata placeholders metacpan
 

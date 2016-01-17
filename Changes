@@ -1,6 +1,14 @@
 Changelog for MarpaX-Role-Parameterized-ResourceIdentifier
 
-0.002 2016-01-16T19:57:16
+0.003 2016-01-17T07:14:43
+ [Jean-Damien Durand <jeandamiendurand@free.fr>]
+ - ResourceIdentifier/BNF.pm: eval and $_ modification in map {} for per
+   Perl::Critic
+ - ResourceIdentifier/BNF.pm: return undef fix as per Perl::Critic
+ - perlcritic.rc: allow_includes
+ - Parameterized/ResourceIdentifier.pm: main package
+
+0.002 2016-01-16T19:57:16Z
  [Jean-Damien Durand <jeandamiendurand@free.fr>]
  - Impl/_top.pm: few things for xtest
  - dev+: removed "secure"
