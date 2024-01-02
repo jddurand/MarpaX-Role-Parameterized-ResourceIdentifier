@@ -407,6 +407,7 @@ my %context = ();
 
 role {
   my $params = shift;
+  my $mop    = shift;
   #
   # -----------------------
   # Sanity checks on params
@@ -438,7 +439,7 @@ role {
     #
     # An extension must provide 'can_scheme'
     #
-    requires 'can_scheme';
+    $mop->requires('can_scheme');
   }
   #
   # Keep track of installed methods
