@@ -375,7 +375,7 @@ sub BUILD {
 # =============================================================================
 # Parameter validation
 # =============================================================================
-our $check_params = compile(
+our $check_params = compile( # consider use parameters, featured added on MooX::R::P 0.500
                             slurpy
                             Dict[
                                  whoami      => Str,
@@ -407,6 +407,7 @@ my %context = ();
 
 role {
   my $params = shift;
+  my $mop    = shift;
   #
   # -----------------------
   # Sanity checks on params
@@ -438,7 +439,7 @@ role {
     #
     # An extension must provide 'can_scheme'
     #
-    requires 'can_scheme';
+    requires 'can_scheme'; # conside use of $mop->require('can_scheme');
   }
   #
   # Keep track of installed methods
@@ -447,7 +448,8 @@ role {
   #
   # Make sure $whoami package is doing MooX::Role::Logger is not already
   #
-  Role::Tiny->apply_roles_to_package($whoami, 'MooX::Role::Logger') unless $whoami->DOES('MooX::Role::Logger');
+  Role::Tiny->apply_roles_to_package($whoami, 'MooX::Role::Logger') # consider use of $mop->with('MooX::Role::Logger')
+    unless $whoami->DOES('MooX::Role::Logger');
   my $action_full_name = sprintf('%s::_action', $whoami);
   #
   # Push on-the-fly the action name
