@@ -439,7 +439,7 @@ role {
     #
     # An extension must provide 'can_scheme'
     #
-    $mop->requires('can_scheme');
+    requires 'can_scheme'; # conside use of $mop->require('can_scheme');
   }
   #
   # Keep track of installed methods
